@@ -1,0 +1,77 @@
+# Cluster Manager Configuration
+# Copy this file to ~/.clusterctl/config.yaml and update values
+
+# Tailscale API Settings
+tailscale:
+  # API key from https://login.tailscale.com/admin/settings/keys
+  api_key: "tskey-api-XXXXX"
+
+  # Your tailnet name (e.g., "example.com" or "tail1234.ts.net")
+  tailnet: ""
+
+  # Tailscale API base URL (usually no need to change)
+  base_url: "https://api.tailscale.com"
+
+  # OAuth settings (alternative to API key)
+  # oauth_client_id: ""
+  # oauth_client_secret: ""
+
+# SSH Connection Settings
+ssh:
+  # Default SSH user
+  user: ""
+
+  # Path to SSH private key
+  private_key_path: "~/.ssh/id_rsa"
+
+  # SSH port
+  port: 22
+
+  # Connection timeout in seconds
+  timeout: 30
+
+  # Use Tailscale SSH instead of regular SSH
+  use_tailscale_ssh: true
+
+# Ray Cluster Settings
+ray:
+  # Default Ray port
+  default_port: 6379
+
+  # Default Ray dashboard port
+  default_dashboard_port: 8265
+
+  # Python executable path
+  python_path: "python3"
+
+  # Auto-install Ray if not present
+  auto_install: true
+
+  # Default Ray version to install
+  default_version: "2.9.0"
+
+# Web Server Settings
+server:
+  # Server host (0.0.0.0 for all interfaces)
+  host: "0.0.0.0"
+
+  # Server port
+  port: 8080
+
+# Database Settings
+database:
+  # Database driver: sqlite or postgres
+  driver: "sqlite"
+
+  # Database connection string
+  # For SQLite: path to database file
+  # For PostgreSQL: postgres://user:password@host:port/database
+  dsn: "~/.clusterctl/clusterctl.db"
+
+# Logging Settings
+log:
+  # Log level: debug, info, warn, error
+  level: "info"
+
+  # Log format: text or json
+  format: "text"
