@@ -11,13 +11,13 @@ import (
 
 // DeviceUseCase handles device-related business logic
 type DeviceUseCase struct {
-	repos          *repository.Repositories
-	tailscale      TailscaleClient
-	sshCollector   MetricsCollector
-	cacheTTL       time.Duration
-	cachedDevices  []*domain.Device
-	cacheTime      time.Time
-	cacheMu        sync.RWMutex
+	repos         *repository.Repositories
+	tailscale     TailscaleClient
+	sshCollector  MetricsCollector
+	cacheTTL      time.Duration
+	cachedDevices []*domain.Device
+	cacheTime     time.Time
+	cacheMu       sync.RWMutex
 }
 
 // TailscaleClient interface for Tailscale API operations
@@ -69,7 +69,8 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 
 	// Save to repository for persistence
 	if uc.repos != nil && uc.repos.Devices != nil {
-		go uc.repos.Devices.SaveMany(context.Background(), devices)
+		// Best-effort persistence without detaching from request lifecycle.
+		_ = uc.repos.Devices.SaveMany(ctx, devices)
 	}
 
 	return devices, nil

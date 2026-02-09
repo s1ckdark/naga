@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"net/url"
 
 	"github.com/labstack/echo/v4"
 
@@ -130,6 +131,7 @@ func (h *Handler) DeviceList(c echo.Context) error {
 // DeviceDetail renders the device detail page
 func (h *Handler) DeviceDetail(c echo.Context) error {
 	id := c.Param("id")
+	escapedID := url.PathEscape(id)
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
@@ -143,11 +145,11 @@ func (h *Handler) DeviceDetail(c echo.Context) error {
 			<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
 		</div>
 	</nav>
-	<main class="max-w-7xl mx-auto px-4 py-8">
-		<div hx-get="/api/devices/`+id+`" hx-trigger="load" hx-swap="innerHTML">
-			Loading device details...
-		</div>
-	</main>
+		<main class="max-w-7xl mx-auto px-4 py-8">
+			<div hx-get="/api/devices/`+escapedID+`" hx-trigger="load" hx-swap="innerHTML">
+				Loading device details...
+			</div>
+		</main>
 </body>
 </html>`)
 }
@@ -249,6 +251,7 @@ func (h *Handler) ClusterCreate(c echo.Context) error {
 // ClusterDetail renders the cluster detail page
 func (h *Handler) ClusterDetail(c echo.Context) error {
 	id := c.Param("id")
+	escapedID := url.PathEscape(id)
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
@@ -262,11 +265,11 @@ func (h *Handler) ClusterDetail(c echo.Context) error {
 			<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
 		</div>
 	</nav>
-	<main class="max-w-7xl mx-auto px-4 py-8">
-		<div hx-get="/api/clusters/`+id+`" hx-trigger="load" hx-swap="innerHTML">
-			Loading cluster details...
-		</div>
-	</main>
+		<main class="max-w-7xl mx-auto px-4 py-8">
+			<div hx-get="/api/clusters/`+escapedID+`" hx-trigger="load" hx-swap="innerHTML">
+				Loading cluster details...
+			</div>
+		</main>
 </body>
 </html>`)
 }

@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dave/clusterctl/internal/domain"
@@ -50,20 +52,29 @@ func NewClusterUseCase(repos *repository.Repositories, rayManager RayManager) *C
 // CreateCluster creates a new cluster configuration
 func (uc *ClusterUseCase) CreateCluster(ctx context.Context, name string, headID string, workerIDs []string) (*domain.Cluster, error) {
 	// Check if cluster name already exists
-	existing, _ := uc.repos.Clusters.GetByName(ctx, name)
+	existing, err := uc.repos.Clusters.GetByName(ctx, name)
+	if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
+		return nil, fmt.Errorf("failed to check existing cluster name: %w", err)
+	}
 	if existing != nil {
 		return nil, domain.ErrClusterAlreadyExist
 	}
 
 	// Check if head node is already in a cluster
-	existingCluster, _ := uc.repos.Clusters.GetClusterByDeviceID(ctx, headID)
+	existingCluster, err := uc.repos.Clusters.GetClusterByDeviceID(ctx, headID)
+	if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
+		return nil, fmt.Errorf("failed to check head node cluster membership: %w", err)
+	}
 	if existingCluster != nil {
 		return nil, fmt.Errorf("head node is already in cluster: %s", existingCluster.Name)
 	}
 
 	// Check if any worker is already in a cluster
 	for _, wid := range workerIDs {
-		existingCluster, _ := uc.repos.Clusters.GetClusterByDeviceID(ctx, wid)
+		existingCluster, err := uc.repos.Clusters.GetClusterByDeviceID(ctx, wid)
+		if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
+			return nil, fmt.Errorf("failed to check worker cluster membership: %w", err)
+		}
 		if existingCluster != nil {
 			return nil, fmt.Errorf("worker %s is already in cluster: %s", wid, existingCluster.Name)
 		}
@@ -81,7 +92,7 @@ func (uc *ClusterUseCase) CreateCluster(ctx context.Context, name string, headID
 
 // GetCluster retrieves a cluster by name
 func (uc *ClusterUseCase) GetCluster(ctx context.Context, name string) (*domain.Cluster, error) {
-	return uc.repos.Clusters.GetByName(ctx, name)
+	return uc.getClusterByIDOrName(ctx, name)
 }
 
 // ListClusters retrieves all clusters
@@ -91,7 +102,7 @@ func (uc *ClusterUseCase) ListClusters(ctx context.Context) ([]*domain.Cluster, 
 
 // StartCluster starts a Ray cluster
 func (uc *ClusterUseCase) StartCluster(ctx context.Context, name string, devices map[string]*domain.Device) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, name)
+	cluster, err := uc.getClusterByIDOrName(ctx, name)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
@@ -147,7 +158,7 @@ func (uc *ClusterUseCase) StartCluster(ctx context.Context, name string, devices
 
 // StopCluster stops a Ray cluster
 func (uc *ClusterUseCase) StopCluster(ctx context.Context, name string, devices map[string]*domain.Device, force bool) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, name)
+	cluster, err := uc.getClusterByIDOrName(ctx, name)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
@@ -170,17 +181,28 @@ func (uc *ClusterUseCase) StopCluster(ctx context.Context, name string, devices 
 	}
 
 	// Stop all workers first
+	var stopErrors []string
 	for _, workerID := range cluster.WorkerIDs {
 		workerDevice := devices[workerID]
 		if workerDevice != nil {
-			uc.rayManager.StopRay(ctx, workerDevice)
+			if err := uc.rayManager.StopRay(ctx, workerDevice); err != nil {
+				stopErrors = append(stopErrors, fmt.Sprintf("worker %s: %v", workerID, err))
+			}
 		}
 	}
 
 	// Stop head
 	headDevice := devices[cluster.HeadNodeID]
 	if headDevice != nil {
-		uc.rayManager.StopRay(ctx, headDevice)
+		if err := uc.rayManager.StopRay(ctx, headDevice); err != nil {
+			stopErrors = append(stopErrors, fmt.Sprintf("head %s: %v", cluster.HeadNodeID, err))
+		}
+	}
+
+	if len(stopErrors) > 0 {
+		cluster.SetError("failed to stop Ray on one or more nodes")
+		uc.repos.Clusters.Update(ctx, cluster)
+		return fmt.Errorf("failed to stop Ray on %d node(s): %s", len(stopErrors), strings.Join(stopErrors, "; "))
 	}
 
 	// Update status
@@ -194,7 +216,7 @@ func (uc *ClusterUseCase) StopCluster(ctx context.Context, name string, devices 
 
 // DeleteCluster deletes a cluster
 func (uc *ClusterUseCase) DeleteCluster(ctx context.Context, name string, devices map[string]*domain.Device, force bool) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, name)
+	cluster, err := uc.getClusterByIDOrName(ctx, name)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
@@ -211,13 +233,16 @@ func (uc *ClusterUseCase) DeleteCluster(ctx context.Context, name string, device
 
 // AddWorker adds a worker to the cluster
 func (uc *ClusterUseCase) AddWorker(ctx context.Context, clusterName string, deviceID string, device *domain.Device, headDevice *domain.Device) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, clusterName)
+	cluster, err := uc.getClusterByIDOrName(ctx, clusterName)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
 
 	// Check if device is already in another cluster
-	existingCluster, _ := uc.repos.Clusters.GetClusterByDeviceID(ctx, deviceID)
+	existingCluster, err := uc.repos.Clusters.GetClusterByDeviceID(ctx, deviceID)
+	if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
+		return fmt.Errorf("failed to check existing cluster membership: %w", err)
+	}
 	if existingCluster != nil && existingCluster.ID != cluster.ID {
 		return fmt.Errorf("device is already in cluster: %s", existingCluster.Name)
 	}
@@ -240,7 +265,7 @@ func (uc *ClusterUseCase) AddWorker(ctx context.Context, clusterName string, dev
 
 // RemoveWorker removes a worker from the cluster
 func (uc *ClusterUseCase) RemoveWorker(ctx context.Context, clusterName string, deviceID string, device *domain.Device) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, clusterName)
+	cluster, err := uc.getClusterByIDOrName(ctx, clusterName)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
@@ -263,7 +288,7 @@ func (uc *ClusterUseCase) RemoveWorker(ctx context.Context, clusterName string, 
 
 // ChangeHead changes the head node of the cluster
 func (uc *ClusterUseCase) ChangeHead(ctx context.Context, clusterName string, newHeadID string, devices map[string]*domain.Device) error {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, clusterName)
+	cluster, err := uc.getClusterByIDOrName(ctx, clusterName)
 	if err != nil {
 		return domain.ErrClusterNotFound
 	}
@@ -298,7 +323,7 @@ func (uc *ClusterUseCase) ChangeHead(ctx context.Context, clusterName string, ne
 
 // GetClusterStatus gets the current status of a cluster
 func (uc *ClusterUseCase) GetClusterStatus(ctx context.Context, name string, headDevice *domain.Device) (*domain.RayClusterInfo, error) {
-	cluster, err := uc.repos.Clusters.GetByName(ctx, name)
+	cluster, err := uc.getClusterByIDOrName(ctx, name)
 	if err != nil {
 		return nil, domain.ErrClusterNotFound
 	}
@@ -312,4 +337,15 @@ func (uc *ClusterUseCase) GetClusterStatus(ctx context.Context, name string, hea
 	}
 
 	return uc.rayManager.GetClusterInfo(ctx, headDevice)
+}
+
+func (uc *ClusterUseCase) getClusterByIDOrName(ctx context.Context, identifier string) (*domain.Cluster, error) {
+	cluster, err := uc.repos.Clusters.GetByID(ctx, identifier)
+	if err == nil && cluster != nil {
+		return cluster, nil
+	}
+	if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
+		return nil, err
+	}
+	return uc.repos.Clusters.GetByName(ctx, identifier)
 }

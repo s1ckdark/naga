@@ -13,16 +13,17 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/dave/clusterctl/internal/domain"
 )
 
 // Executor executes commands on remote machines via SSH
 type Executor struct {
-	user           string
-	privateKeyPath string
-	port           int
-	timeout        time.Duration
+	user            string
+	privateKeyPath  string
+	port            int
+	timeout         time.Duration
 	useTailscaleSSH bool
 
 	// Connection pool
@@ -212,14 +213,48 @@ func (e *Executor) getSSHConfig() (*ssh.ClientConfig, error) {
 		return nil, fmt.Errorf("failed to parse private key: %w", err)
 	}
 
+	hostKeyCallback, err := e.getHostKeyCallback()
+	if err != nil {
+		return nil, err
+	}
+
 	return &ssh.ClientConfig{
 		User: e.user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: proper host key verification
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         e.timeout,
 	}, nil
+}
+
+func (e *Executor) getHostKeyCallback() (ssh.HostKeyCallback, error) {
+	var knownHostFiles []string
+
+	if file := os.Getenv("CLUSTERCTL_SSH_KNOWN_HOSTS"); file != "" {
+		knownHostFiles = append(knownHostFiles, file)
+	} else {
+		home, _ := os.UserHomeDir()
+		candidates := []string{
+			filepath.Join(home, ".ssh", "known_hosts"),
+			"/etc/ssh/ssh_known_hosts",
+		}
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				knownHostFiles = append(knownHostFiles, candidate)
+			}
+		}
+	}
+
+	if len(knownHostFiles) == 0 {
+		return nil, fmt.Errorf("no known_hosts file found; set CLUSTERCTL_SSH_KNOWN_HOSTS or create ~/.ssh/known_hosts")
+	}
+
+	callback, err := knownhosts.New(knownHostFiles...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize SSH host key verification: %w", err)
+	}
+	return callback, nil
 }
 
 // CopyFile copies a file to a remote device
