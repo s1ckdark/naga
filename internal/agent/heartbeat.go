@@ -51,25 +51,25 @@ func (m *HeartbeatMonitor) IsNodeHealthy(nodeID string) bool {
 	return nh.IsHealthy(m.timeout)
 }
 
-func (m *HeartbeatMonitor) GetFailedNodes(clusterID string) []*domain.NodeHealth {
+func (m *HeartbeatMonitor) GetFailedNodes(clusterID string) []domain.NodeHealth {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var failed []*domain.NodeHealth
+	var failed []domain.NodeHealth
 	for _, nh := range m.nodeHealth {
 		if nh.ClusterID == clusterID && !nh.IsHealthy(m.timeout) {
-			failed = append(failed, nh)
+			failed = append(failed, *nh)
 		}
 	}
 	return failed
 }
 
-func (m *HeartbeatMonitor) GetHealthyWorkers(clusterID string) []*domain.NodeHealth {
+func (m *HeartbeatMonitor) GetHealthyWorkers(clusterID string) []domain.NodeHealth {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var workers []*domain.NodeHealth
+	var workers []domain.NodeHealth
 	for _, nh := range m.nodeHealth {
 		if nh.ClusterID == clusterID && nh.Role == domain.NodeRoleWorker && nh.IsHealthy(m.timeout) {
-			workers = append(workers, nh)
+			workers = append(workers, *nh)
 		}
 	}
 	return workers

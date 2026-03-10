@@ -503,7 +503,12 @@ func newAgentInstallCmd() *cobra.Command {
 				}
 
 				// Install systemd service
-				for _, installCmd := range agent.InstallCommands(sysCfg) {
+				installCmds, err := agent.InstallCommands(sysCfg)
+				if err != nil {
+					fmt.Printf("    Error: %v\n", err)
+					continue
+				}
+				for _, installCmd := range installCmds {
 					if _, err := sshExecutor.Execute(ctx, d, installCmd); err != nil {
 						fmt.Printf("    Warning: %v\n", err)
 					}

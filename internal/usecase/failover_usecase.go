@@ -48,22 +48,22 @@ func (uc *FailoverUseCase) ExecuteFailover(
 
 	oldHeadDevice := devices[cluster.HeadNodeID]
 
-	// Step 1: Save checkpoint (best-effort)
+	// Step 1: Save checkpoint (best-effort, uses Background to avoid caller cancellation)
 	if oldHeadDevice != nil && oldHeadDevice.IsOnline() && checkpointDir != "" {
-		saveCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		if err := uc.rayManager.SaveCheckpoint(saveCtx, oldHeadDevice, checkpointDir); err != nil {
 			log.Printf("Warning: failed to save checkpoint: %v", err)
 		}
-		cancel()
 	}
 
-	// Step 2: Stop old head (best-effort)
+	// Step 2: Stop old head (best-effort, uses Background to avoid caller cancellation)
 	if oldHeadDevice != nil && oldHeadDevice.IsOnline() {
-		stopCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		if err := uc.rayManager.StopRay(stopCtx, oldHeadDevice); err != nil {
 			log.Printf("Warning: failed to stop old head: %v", err)
 		}
-		cancel()
 	}
 
 	// Step 3: Update cluster config
@@ -90,13 +90,13 @@ func (uc *FailoverUseCase) ExecuteFailover(
 		}
 	}
 
-	// Step 6: Restore checkpoint (best-effort)
+	// Step 6: Restore checkpoint (best-effort, uses Background to avoid caller cancellation)
 	if checkpointDir != "" {
-		restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 		if err := uc.rayManager.RestoreCheckpoint(restoreCtx, newHeadDevice, checkpointDir); err != nil {
 			log.Printf("Warning: failed to restore checkpoint: %v", err)
 		}
-		cancel()
 	}
 
 	cluster.Status = domain.ClusterStatusRunning

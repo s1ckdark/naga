@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -20,6 +21,7 @@ type Agent struct {
 	clusterID         string
 	role              domain.NodeRole
 	listenAddr        string
+	authToken         string
 	heartbeatInterval time.Duration
 	failureTimeout    time.Duration
 	monitor           *HeartbeatMonitor
@@ -35,6 +37,7 @@ type AgentConfig struct {
 	ClusterID         string
 	Role              domain.NodeRole
 	ListenAddr        string
+	AuthToken         string
 	HeartbeatInterval time.Duration
 	FailureTimeout    time.Duration
 	AISelector        AISelector
@@ -50,6 +53,7 @@ func NewAgent(cfg AgentConfig) *Agent {
 		clusterID:         cfg.ClusterID,
 		role:              cfg.Role,
 		listenAddr:        cfg.ListenAddr,
+		authToken:         cfg.AuthToken,
 		heartbeatInterval: cfg.HeartbeatInterval,
 		failureTimeout:    cfg.FailureTimeout,
 		monitor:           monitor,
@@ -154,9 +158,27 @@ func (a *Agent) watchHead(ctx context.Context) {
 			failed := a.monitor.GetFailedNodes(a.clusterID)
 			for _, nh := range failed {
 				if nh.Role == domain.NodeRoleHead {
-					log.Printf("agent %s detected head node %s failure, triggering election",
+					log.Printf("agent %s detected head node %s failure",
 						a.nodeID, nh.NodeID)
+
+					// Deduplication: only the worker with the lowest ID triggers the election
 					workers := a.monitor.GetHealthyWorkers(a.clusterID)
+					if len(workers) == 0 {
+						continue
+					}
+
+					workerIDs := make([]string, 0, len(workers))
+					for _, w := range workers {
+						workerIDs = append(workerIDs, w.NodeID)
+					}
+					sort.Strings(workerIDs)
+
+					if workerIDs[0] != a.nodeID {
+						log.Printf("agent %s deferring election to %s", a.nodeID, workerIDs[0])
+						continue
+					}
+
+					log.Printf("agent %s triggering election as lowest-ID worker", a.nodeID)
 					candidates := make([]domain.ElectionCandidate, 0, len(workers))
 					for _, w := range workers {
 						c := domain.ElectionCandidate{
@@ -190,6 +212,18 @@ func (a *Agent) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Authenticate request using Bearer token
+	if a.authToken != "" {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer "+a.authToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// Limit request body size to prevent abuse
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 
 	var hb domain.Heartbeat
 	if err := json.NewDecoder(r.Body).Decode(&hb); err != nil {
