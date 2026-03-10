@@ -12,6 +12,7 @@ import (
 	"github.com/dave/clusterctl/internal/domain"
 	"github.com/dave/clusterctl/internal/infra/ssh"
 	"github.com/dave/clusterctl/internal/infra/tailscale"
+	"github.com/dave/clusterctl/internal/repository/sqlite"
 	"github.com/dave/clusterctl/internal/tui/monitor"
 	"github.com/dave/clusterctl/internal/usecase"
 )
@@ -378,17 +379,30 @@ Keys:
 				deviceMap[d.ID] = d
 			}
 
-			// Find cluster - try to match by name from device tags or just use name
-			// For now, use simple name matching until repo is wired
+			// Load cluster from repository
+			db, err := sqlite.NewDB(cfg.Database.DSN)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer db.Close()
+
+			repos := db.Repositories()
+			clusterUC := usecase.NewClusterUseCase(repos, nil)
+			cluster, err := clusterUC.GetCluster(ctx, clusterName)
+			if err != nil {
+				return fmt.Errorf("cluster '%s' not found: %w", clusterName, err)
+			}
+
+			// Resolve cluster nodes to devices
 			var clusterDevices []*domain.Device
-			for _, d := range allDevices {
-				if d.CanSSH() {
+			for _, nodeID := range cluster.AllNodeIDs() {
+				if d, ok := deviceMap[nodeID]; ok && d.CanSSH() {
 					clusterDevices = append(clusterDevices, d)
 				}
 			}
 
 			if len(clusterDevices) == 0 {
-				return fmt.Errorf("no reachable nodes found")
+				return fmt.Errorf("no reachable nodes in cluster '%s'", clusterName)
 			}
 
 			sshExecutor := ssh.NewExecutor(ssh.Config{
