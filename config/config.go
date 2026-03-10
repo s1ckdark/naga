@@ -27,6 +27,9 @@ type Config struct {
 
 	// Logging settings
 	Log LogConfig `mapstructure:"log"`
+
+	// Agent settings
+	Agent AgentConfig `mapstructure:"agent"`
 }
 
 // TailscaleConfig holds Tailscale API settings
@@ -74,6 +77,16 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // json, text
 }
 
+// AgentConfig holds agent settings
+type AgentConfig struct {
+	HeartbeatInterval   int    `mapstructure:"heartbeat_interval"`
+	HealthCheckInterval int    `mapstructure:"healthcheck_interval"`
+	FailureTimeout      int    `mapstructure:"failure_timeout"`
+	CheckpointDir       string `mapstructure:"checkpoint_dir"`
+	AnthropicAPIKey     string `mapstructure:"anthropic_api_key"`
+	AgentPort           int    `mapstructure:"agent_port"`
+}
+
 // DefaultConfig returns a Config with default values
 func DefaultConfig() *Config {
 	return &Config{
@@ -105,6 +118,13 @@ func DefaultConfig() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "text",
+		},
+		Agent: AgentConfig{
+			HeartbeatInterval:   3,
+			HealthCheckInterval: 5,
+			FailureTimeout:      15,
+			CheckpointDir:       "/tmp/ray-checkpoints",
+			AgentPort:           9090,
 		},
 	}
 }

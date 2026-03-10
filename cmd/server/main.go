@@ -75,7 +75,7 @@ func main() {
 	e.Static("/static", "internal/web/static")
 
 	// Initialize handlers
-	h := handler.NewHandler(deviceUC, nil, nil, cfg)
+	h := handler.NewHandler(deviceUC, nil, nil, nil, cfg)
 
 	// Routes
 	e.GET("/", h.Dashboard)
@@ -101,6 +101,8 @@ func main() {
 	api.POST("/clusters/:id/workers", h.APIClusterAddWorker)
 	api.DELETE("/clusters/:id/workers/:deviceId", h.APIClusterRemoveWorker)
 	api.PUT("/clusters/:id/head", h.APIClusterChangeHead)
+	api.GET("/clusters/:id/health", h.APIClusterHealth)
+	api.POST("/clusters/:id/failover", h.APIClusterFailover)
 
 	// Health check
 	e.GET("/health", func(c echo.Context) error {

@@ -7,15 +7,17 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/dave/clusterctl/config"
+	"github.com/dave/clusterctl/internal/domain"
 	"github.com/dave/clusterctl/internal/usecase"
 )
 
 // Handler handles HTTP requests
 type Handler struct {
-	deviceUC  *usecase.DeviceUseCase
-	clusterUC *usecase.ClusterUseCase
-	monitorUC *usecase.MonitorUseCase
-	cfg       *config.Config
+	deviceUC   *usecase.DeviceUseCase
+	clusterUC  *usecase.ClusterUseCase
+	monitorUC  *usecase.MonitorUseCase
+	failoverUC *usecase.FailoverUseCase
+	cfg        *config.Config
 }
 
 // NewHandler creates a new Handler
@@ -23,13 +25,15 @@ func NewHandler(
 	deviceUC *usecase.DeviceUseCase,
 	clusterUC *usecase.ClusterUseCase,
 	monitorUC *usecase.MonitorUseCase,
+	failoverUC *usecase.FailoverUseCase,
 	cfg *config.Config,
 ) *Handler {
 	return &Handler{
-		deviceUC:  deviceUC,
-		clusterUC: clusterUC,
-		monitorUC: monitorUC,
-		cfg:       cfg,
+		deviceUC:   deviceUC,
+		clusterUC:  clusterUC,
+		monitorUC:  monitorUC,
+		failoverUC: failoverUC,
+		cfg:        cfg,
 	}
 }
 
@@ -534,4 +538,100 @@ func (h *Handler) APIClusterChangeHead(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "head_changed", "cluster_id": id, "new_head_id": req.NewHeadID})
+}
+
+// APIClusterHealth returns health status of all nodes in a cluster
+func (h *Handler) APIClusterHealth(c echo.Context) error {
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	if h.clusterUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cluster service not available"})
+	}
+
+	cluster, err := h.clusterUC.GetCluster(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+
+	// Check each node's agent health endpoint
+	type nodeStatus struct {
+		NodeID  string `json:"nodeId"`
+		Role    string `json:"role"`
+		Healthy bool   `json:"healthy"`
+		Error   string `json:"error,omitempty"`
+	}
+
+	var statuses []nodeStatus
+
+	// Head node
+	statuses = append(statuses, nodeStatus{
+		NodeID:  cluster.HeadNodeID,
+		Role:    "head",
+		Healthy: cluster.IsRunning(),
+	})
+
+	// Workers
+	for _, wid := range cluster.WorkerIDs {
+		statuses = append(statuses, nodeStatus{
+			NodeID:  wid,
+			Role:    "worker",
+			Healthy: true, // TODO: actual health check via agent HTTP
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"clusterId": cluster.ID,
+		"name":      cluster.Name,
+		"status":    cluster.Status,
+		"nodes":     statuses,
+	})
+}
+
+// APIClusterFailover manually triggers a failover
+func (h *Handler) APIClusterFailover(c echo.Context) error {
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	if h.clusterUC == nil || h.failoverUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service not available"})
+	}
+
+	cluster, err := h.clusterUC.GetCluster(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+
+	var req struct {
+		NewHeadID string `json:"new_head_id"`
+		Reason    string `json:"reason"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if req.NewHeadID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "new_head_id is required"})
+	}
+
+	devices, err := h.deviceUC.GetDeviceMap(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	election := &domain.ElectionResult{
+		NewHeadID:  req.NewHeadID,
+		Reason:     req.Reason,
+		AIDecision: false,
+	}
+
+	if err := h.failoverUC.ExecuteFailover(ctx, cluster, election, devices, ""); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":     "failover_complete",
+		"cluster_id": cluster.ID,
+		"new_head":   req.NewHeadID,
+	})
 }
