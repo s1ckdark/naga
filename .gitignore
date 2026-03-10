@@ -42,3 +42,13 @@ config.yaml
 # Environment
 .env
 .env.local
+
+# Build artifacts
+/clusterctl
+/cluster-agent
+/server
+
+# Claude/OMC
+.cache/
+.omc/
+.claude/
