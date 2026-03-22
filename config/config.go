@@ -34,9 +34,9 @@ type Config struct {
 
 // TailscaleConfig holds Tailscale API settings
 type TailscaleConfig struct {
-	APIKey     string `mapstructure:"api_key"`
-	Tailnet    string `mapstructure:"tailnet"`
-	BaseURL    string `mapstructure:"base_url"`
+	APIKey            string `mapstructure:"api_key"`
+	Tailnet           string `mapstructure:"tailnet"`
+	BaseURL           string `mapstructure:"base_url"`
 	OAuthClientID     string `mapstructure:"oauth_client_id"`
 	OAuthClientSecret string `mapstructure:"oauth_client_secret"`
 }
@@ -93,6 +93,7 @@ type AgentConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Tailscale: TailscaleConfig{
+			Tailnet: "-",
 			BaseURL: "https://api.tailscale.com",
 		},
 		SSH: SSHConfig{
@@ -148,7 +149,6 @@ func Load() (*Config, error) {
 
 	// Map environment variables
 	viper.BindEnv("tailscale.api_key", "TAILSCALE_API_KEY")
-	viper.BindEnv("tailscale.tailnet", "TAILSCALE_TAILNET")
 	viper.BindEnv("tailscale.oauth_client_id", "TAILSCALE_OAUTH_CLIENT_ID")
 	viper.BindEnv("tailscale.oauth_client_secret", "TAILSCALE_OAUTH_CLIENT_SECRET")
 	viper.BindEnv("ssh.user", "CLUSTERCTL_SSH_USER")
@@ -218,7 +218,7 @@ func GetConfigDir() string {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Tailscale.APIKey == "" && c.Tailscale.OAuthClientID == "" {
-		return fmt.Errorf("tailscale API key or OAuth credentials required")
+		return fmt.Errorf("TAILSCALE_API_KEY or OAuth credentials required")
 	}
 	return nil
 }

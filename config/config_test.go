@@ -17,8 +17,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.SSH.Timeout != 30 {
 		t.Errorf("SSH.Timeout = %d, want 30", cfg.SSH.Timeout)
 	}
-	if !cfg.SSH.UseTailscaleSSH {
-		t.Error("SSH.UseTailscaleSSH should default to true")
+	if cfg.SSH.UseTailscaleSSH {
+		t.Error("SSH.UseTailscaleSSH should default to false")
 	}
 	if cfg.Ray.DefaultPort != 6379 {
 		t.Errorf("Ray.DefaultPort = %d, want 6379", cfg.Ray.DefaultPort)
