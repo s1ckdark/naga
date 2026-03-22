@@ -27,13 +27,16 @@ type Config struct {
 
 	// Logging settings
 	Log LogConfig `mapstructure:"log"`
+
+	// Agent settings
+	Agent AgentConfig `mapstructure:"agent"`
 }
 
 // TailscaleConfig holds Tailscale API settings
 type TailscaleConfig struct {
-	APIKey     string `mapstructure:"api_key"`
-	Tailnet    string `mapstructure:"tailnet"`
-	BaseURL    string `mapstructure:"base_url"`
+	APIKey            string `mapstructure:"api_key"`
+	Tailnet           string `mapstructure:"tailnet"`
+	BaseURL           string `mapstructure:"base_url"`
 	OAuthClientID     string `mapstructure:"oauth_client_id"`
 	OAuthClientSecret string `mapstructure:"oauth_client_secret"`
 }
@@ -58,8 +61,10 @@ type RayConfig struct {
 
 // ServerConfig holds web server settings
 type ServerConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"port"`
+	Host           string   `mapstructure:"host"`
+	Port           int      `mapstructure:"port"`
+	APIKey         string   `mapstructure:"api_key"`
+	CORSOrigins    []string `mapstructure:"cors_origins"`
 }
 
 // DatabaseConfig holds database settings
@@ -74,10 +79,21 @@ type LogConfig struct {
 	Format string `mapstructure:"format"` // json, text
 }
 
+// AgentConfig holds agent settings
+type AgentConfig struct {
+	HeartbeatInterval   int    `mapstructure:"heartbeat_interval"`
+	HealthCheckInterval int    `mapstructure:"healthcheck_interval"`
+	FailureTimeout      int    `mapstructure:"failure_timeout"`
+	CheckpointDir       string `mapstructure:"checkpoint_dir"`
+	AnthropicAPIKey     string `mapstructure:"anthropic_api_key"`
+	AgentPort           int    `mapstructure:"agent_port"`
+}
+
 // DefaultConfig returns a Config with default values
 func DefaultConfig() *Config {
 	return &Config{
 		Tailscale: TailscaleConfig{
+			Tailnet: "-",
 			BaseURL: "https://api.tailscale.com",
 		},
 		SSH: SSHConfig{
@@ -85,7 +101,7 @@ func DefaultConfig() *Config {
 			PrivateKeyPath:  filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa"),
 			Port:            22,
 			Timeout:         30,
-			UseTailscaleSSH: true,
+			UseTailscaleSSH: false,
 		},
 		Ray: RayConfig{
 			DefaultPort:          6379,
@@ -95,8 +111,9 @@ func DefaultConfig() *Config {
 			DefaultVersion:       "2.9.0",
 		},
 		Server: ServerConfig{
-			Host: "0.0.0.0",
-			Port: 8080,
+			Host:        "0.0.0.0",
+			Port:        8080,
+			CORSOrigins: []string{"http://localhost:8080"},
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
@@ -105,6 +122,13 @@ func DefaultConfig() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "text",
+		},
+		Agent: AgentConfig{
+			HeartbeatInterval:   3,
+			HealthCheckInterval: 5,
+			FailureTimeout:      15,
+			CheckpointDir:       "/tmp/ray-checkpoints",
+			AgentPort:           9090,
 		},
 	}
 }
@@ -125,12 +149,12 @@ func Load() (*Config, error) {
 
 	// Map environment variables
 	viper.BindEnv("tailscale.api_key", "TAILSCALE_API_KEY")
-	viper.BindEnv("tailscale.tailnet", "TAILSCALE_TAILNET")
 	viper.BindEnv("tailscale.oauth_client_id", "TAILSCALE_OAUTH_CLIENT_ID")
 	viper.BindEnv("tailscale.oauth_client_secret", "TAILSCALE_OAUTH_CLIENT_SECRET")
 	viper.BindEnv("ssh.user", "CLUSTERCTL_SSH_USER")
 	viper.BindEnv("ssh.private_key_path", "CLUSTERCTL_SSH_KEY")
 	viper.BindEnv("database.dsn", "CLUSTERCTL_DATABASE_DSN")
+	viper.BindEnv("server.api_key", "CLUSTERCTL_API_KEY")
 
 	// Try to read config file
 	if err := viper.ReadInConfig(); err != nil {
@@ -194,7 +218,7 @@ func GetConfigDir() string {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Tailscale.APIKey == "" && c.Tailscale.OAuthClientID == "" {
-		return fmt.Errorf("tailscale API key or OAuth credentials required")
+		return fmt.Errorf("TAILSCALE_API_KEY or OAuth credentials required")
 	}
 	return nil
 }

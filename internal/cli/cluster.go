@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
+	"github.com/dave/clusterctl/internal/agent"
 	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/clusterctl/internal/infra/ssh"
 	"github.com/dave/clusterctl/internal/infra/tailscale"
+	"github.com/dave/clusterctl/internal/repository/sqlite"
+	"github.com/dave/clusterctl/internal/tui/monitor"
 	"github.com/dave/clusterctl/internal/usecase"
 )
 
@@ -28,6 +33,8 @@ func newClusterCmd() *cobra.Command {
 	cmd.AddCommand(newClusterChangeHeadCmd())
 	cmd.AddCommand(newClusterStartCmd())
 	cmd.AddCommand(newClusterStopCmd())
+	cmd.AddCommand(newClusterMonitorCmd())
+	cmd.AddCommand(newClusterAgentCmd())
 
 	return cmd
 }
@@ -332,6 +339,309 @@ func newClusterStopCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&force, "force", false, "Force stop without checking for running jobs")
 
+	return cmd
+}
+
+func newClusterMonitorCmd() *cobra.Command {
+	var interval int
+
+	cmd := &cobra.Command{
+		Use:   "monitor <cluster-name>",
+		Short: "Monitor GPU usage across cluster nodes",
+		Long: `Monitor GPU utilization, memory, temperature, and power for all nodes
+in a cluster in real-time. Requires nvidia-smi on worker nodes.
+
+Keys:
+  d  Toggle table/detail view
+  s  Cycle sort order
+  r  Force refresh
+  q  Quit`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+
+			cfg, err := getConfig()
+			if err != nil {
+				return err
+			}
+
+			client := tailscale.NewClient(cfg.Tailscale.APIKey, cfg.Tailscale.Tailnet)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			allDevices, err := client.ListDevices(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list devices: %w", err)
+			}
+
+			deviceMap := make(map[string]*domain.Device)
+			for _, d := range allDevices {
+				deviceMap[d.ID] = d
+			}
+
+			// Load cluster from repository
+			db, err := sqlite.NewDB(cfg.Database.DSN)
+			if err != nil {
+				return fmt.Errorf("failed to open database: %w", err)
+			}
+			defer db.Close()
+
+			repos := db.Repositories()
+			clusterUC := usecase.NewClusterUseCase(repos, nil)
+			cluster, err := clusterUC.GetCluster(ctx, clusterName)
+			if err != nil {
+				return fmt.Errorf("cluster '%s' not found: %w", clusterName, err)
+			}
+
+			// Resolve cluster nodes to devices
+			var clusterDevices []*domain.Device
+			for _, nodeID := range cluster.AllNodeIDs() {
+				if d, ok := deviceMap[nodeID]; ok && d.CanSSH() {
+					clusterDevices = append(clusterDevices, d)
+				}
+			}
+
+			if len(clusterDevices) == 0 {
+				return fmt.Errorf("no reachable nodes in cluster '%s'", clusterName)
+			}
+
+			sshExecutor := ssh.NewExecutor(ssh.Config{
+				User:            cfg.SSH.User,
+				PrivateKeyPath:  cfg.SSH.PrivateKeyPath,
+				Port:            cfg.SSH.Port,
+				Timeout:         time.Duration(cfg.SSH.Timeout) * time.Second,
+				UseTailscaleSSH: cfg.SSH.UseTailscaleSSH,
+			})
+			defer sshExecutor.Close()
+
+			gpuCollector := ssh.NewGPUCollector(sshExecutor)
+
+			duration := time.Duration(interval) * time.Second
+			model := monitor.NewModel(clusterName, clusterDevices, gpuCollector, duration)
+			p := tea.NewProgram(model, tea.WithAltScreen())
+			_, err = p.Run()
+			return err
+		},
+	}
+
+	cmd.Flags().IntVarP(&interval, "interval", "i", 3, "Refresh interval in seconds")
+	return cmd
+}
+
+func newClusterAgentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "agent",
+		Short: "Manage cluster node agents",
+	}
+	cmd.AddCommand(newAgentInstallCmd())
+	cmd.AddCommand(newAgentUninstallCmd())
+	cmd.AddCommand(newAgentStatusCmd())
+	return cmd
+}
+
+func newAgentInstallCmd() *cobra.Command {
+	var (
+		binaryPath string
+		port       int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "install <cluster-name>",
+		Short: "Install agent on all cluster nodes",
+		Long:  "Copies the cluster-agent binary and installs systemd service on each node.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+
+			cfg, err := getConfig()
+			if err != nil {
+				return err
+			}
+
+			client := tailscale.NewClient(cfg.Tailscale.APIKey, cfg.Tailscale.Tailnet)
+			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+			defer cancel()
+
+			allDevices, err := client.ListDevices(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list devices: %w", err)
+			}
+
+			sshExecutor := ssh.NewExecutor(ssh.Config{
+				User:            cfg.SSH.User,
+				PrivateKeyPath:  cfg.SSH.PrivateKeyPath,
+				Port:            cfg.SSH.Port,
+				Timeout:         time.Duration(cfg.SSH.Timeout) * time.Second,
+				UseTailscaleSSH: cfg.SSH.UseTailscaleSSH,
+			})
+			defer sshExecutor.Close()
+
+			for _, d := range allDevices {
+				if !d.CanSSH() {
+					fmt.Printf("  Skipping %s (offline or no SSH)\n", d.GetDisplayName())
+					continue
+				}
+
+				role := "worker"
+				// TODO: determine role from cluster config
+
+				sysCfg := agent.SystemdConfig{
+					NodeID:     d.ID,
+					ClusterID:  clusterName,
+					Role:       role,
+					Port:       port,
+					BinaryPath: binaryPath,
+					APIKey:     cfg.Agent.AnthropicAPIKey,
+				}
+
+				fmt.Printf("  Installing agent on %s (%s)...\n", d.GetDisplayName(), role)
+
+				// Copy binary
+				if err := sshExecutor.CopyFile(ctx, d, binaryPath, binaryPath); err != nil {
+					fmt.Printf("    Warning: failed to copy binary: %v\n", err)
+					continue
+				}
+
+				// Install systemd service
+				installCmds, err := agent.InstallCommands(sysCfg)
+				if err != nil {
+					fmt.Printf("    Error: %v\n", err)
+					continue
+				}
+				for _, installCmd := range installCmds {
+					if _, err := sshExecutor.Execute(ctx, d, installCmd); err != nil {
+						fmt.Printf("    Warning: %v\n", err)
+					}
+				}
+
+				fmt.Printf("    Done.\n")
+			}
+
+			fmt.Println("Agent installation complete.")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&binaryPath, "binary", "/usr/local/bin/cluster-agent", "Path to agent binary")
+	cmd.Flags().IntVar(&port, "port", 9090, "Agent listen port")
+	return cmd
+}
+
+func newAgentUninstallCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "uninstall <cluster-name>",
+		Short: "Uninstall agent from all cluster nodes",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+
+			cfg, err := getConfig()
+			if err != nil {
+				return err
+			}
+
+			client := tailscale.NewClient(cfg.Tailscale.APIKey, cfg.Tailscale.Tailnet)
+			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+
+			allDevices, err := client.ListDevices(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list devices: %w", err)
+			}
+
+			sshExecutor := ssh.NewExecutor(ssh.Config{
+				User:            cfg.SSH.User,
+				PrivateKeyPath:  cfg.SSH.PrivateKeyPath,
+				Port:            cfg.SSH.Port,
+				Timeout:         time.Duration(cfg.SSH.Timeout) * time.Second,
+				UseTailscaleSSH: cfg.SSH.UseTailscaleSSH,
+			})
+			defer sshExecutor.Close()
+
+			for _, d := range allDevices {
+				if !d.CanSSH() {
+					continue
+				}
+
+				fmt.Printf("  Uninstalling agent from %s...\n", d.GetDisplayName())
+
+				for _, uninstallCmd := range agent.UninstallCommands(clusterName, d.ID) {
+					if _, err := sshExecutor.Execute(ctx, d, uninstallCmd); err != nil {
+						fmt.Printf("    Warning: %v\n", err)
+					}
+				}
+				fmt.Printf("    Done.\n")
+			}
+
+			fmt.Println("Agent uninstallation complete.")
+			return nil
+		},
+	}
+	return cmd
+}
+
+func newAgentStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status <cluster-name>",
+		Short: "Check agent status on all cluster nodes",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clusterName := args[0]
+
+			cfg, err := getConfig()
+			if err != nil {
+				return err
+			}
+
+			client := tailscale.NewClient(cfg.Tailscale.APIKey, cfg.Tailscale.Tailnet)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			allDevices, err := client.ListDevices(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to list devices: %w", err)
+			}
+
+			sshExecutor := ssh.NewExecutor(ssh.Config{
+				User:            cfg.SSH.User,
+				PrivateKeyPath:  cfg.SSH.PrivateKeyPath,
+				Port:            cfg.SSH.Port,
+				Timeout:         time.Duration(cfg.SSH.Timeout) * time.Second,
+				UseTailscaleSSH: cfg.SSH.UseTailscaleSSH,
+			})
+			defer sshExecutor.Close()
+
+			fmt.Printf("Agent status for cluster '%s':\n\n", clusterName)
+
+			for _, d := range allDevices {
+				if !d.CanSSH() {
+					fmt.Printf("  %-20s  OFFLINE\n", d.GetDisplayName())
+					continue
+				}
+
+				svcName := agent.ServiceName(clusterName, d.ID)
+				output, err := sshExecutor.Execute(ctx, d, fmt.Sprintf("systemctl is-active %s 2>/dev/null || echo inactive", svcName))
+				if err != nil {
+					fmt.Printf("  %-20s  ERROR: %v\n", d.GetDisplayName(), err)
+					continue
+				}
+
+				status := "UNKNOWN"
+				trimmed := output
+				if len(trimmed) > 0 {
+					// Remove trailing newlines
+					for len(trimmed) > 0 && (trimmed[len(trimmed)-1] == '\n' || trimmed[len(trimmed)-1] == '\r') {
+						trimmed = trimmed[:len(trimmed)-1]
+					}
+					status = trimmed
+				}
+
+				fmt.Printf("  %-20s  %s\n", d.GetDisplayName(), status)
+			}
+
+			return nil
+		},
+	}
 	return cmd
 }
 

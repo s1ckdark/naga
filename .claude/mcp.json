@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "gpu-cluster": {
+      "command": "node",
+      "args": ["/Users/dave/iWorks/clusterManager/mcp-server/dist/index.js"],
+      "env": {
+        "CLUSTER_API_URL": "http://localhost:8080"
+      }
+    }
+  }
+}

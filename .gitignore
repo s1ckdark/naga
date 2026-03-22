@@ -42,3 +42,19 @@ config.yaml
 # Environment
 .env
 .env.local
+
+# Build artifacts
+/clusterctl
+/cluster-agent
+/server
+
+# Claude/OMC
+.cache/
+.omc/
+.claude/*
+!.claude/mcp.json
+
+# MCP server
+mcp-server/node_modules/
+mcp-server/dist/
+ClusterManager/.build/

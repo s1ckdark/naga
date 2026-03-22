@@ -29,6 +29,14 @@ type Device struct {
 	RayInstalled  bool         `json:"rayInstalled"`
 	RayVersion    string       `json:"rayVersion"`
 	PythonVersion string       `json:"pythonVersion"`
+	HasGPU        bool         `json:"hasGpu"`
+	GPUModel      string       `json:"gpuModel,omitempty"`
+	GPUCount      int          `json:"gpuCount"`
+}
+
+// IsGPUCandidate returns true if the device could potentially have a GPU (Linux + SSH)
+func (d *Device) IsGPUCandidate() bool {
+	return d.OS == "Linux" && d.CanSSH()
 }
 
 // IsOnline returns true if the device is currently online

@@ -28,8 +28,8 @@ func (r *DeviceRepository) Save(ctx context.Context, device *domain.Device) erro
 		INSERT INTO devices (
 			id, name, hostname, ip_addresses, tailscale_ip, os, status,
 			is_external, tags, user, last_seen, created_at, ssh_enabled,
-			ray_installed, ray_version, python_version, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ray_installed, ray_version, python_version, has_gpu, gpu_model, gpu_count, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
 			hostname = excluded.hostname,
@@ -45,13 +45,17 @@ func (r *DeviceRepository) Save(ctx context.Context, device *domain.Device) erro
 			ray_installed = excluded.ray_installed,
 			ray_version = excluded.ray_version,
 			python_version = excluded.python_version,
+			has_gpu = excluded.has_gpu,
+			gpu_model = excluded.gpu_model,
+			gpu_count = excluded.gpu_count,
 			updated_at = excluded.updated_at
 	`,
 		device.ID, device.Name, device.Hostname, string(ipAddresses),
 		device.TailscaleIP, device.OS, device.Status, device.IsExternal,
 		string(tags), device.User, device.LastSeen, device.CreatedAt,
 		device.SSHEnabled, device.RayInstalled, device.RayVersion,
-		device.PythonVersion, time.Now(),
+		device.PythonVersion, device.HasGPU, device.GPUModel, device.GPUCount,
+		time.Now(),
 	)
 
 	return err
@@ -62,7 +66,8 @@ func (r *DeviceRepository) GetByID(ctx context.Context, id string) (*domain.Devi
 	row := r.db.QueryRowContext(ctx, `
 		SELECT id, name, hostname, ip_addresses, tailscale_ip, os, status,
 			   is_external, tags, user, last_seen, created_at, ssh_enabled,
-			   ray_installed, ray_version, python_version
+			   ray_installed, ray_version, python_version,
+			   has_gpu, gpu_model, gpu_count
 		FROM devices WHERE id = ?
 	`, id)
 
@@ -74,7 +79,8 @@ func (r *DeviceRepository) GetAll(ctx context.Context) ([]*domain.Device, error)
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, name, hostname, ip_addresses, tailscale_ip, os, status,
 			   is_external, tags, user, last_seen, created_at, ssh_enabled,
-			   ray_installed, ray_version, python_version
+			   ray_installed, ray_version, python_version,
+			   has_gpu, gpu_model, gpu_count
 		FROM devices ORDER BY name
 	`)
 	if err != nil {
@@ -90,7 +96,8 @@ func (r *DeviceRepository) GetByFilter(ctx context.Context, filter domain.Device
 	query := `
 		SELECT id, name, hostname, ip_addresses, tailscale_ip, os, status,
 			   is_external, tags, user, last_seen, created_at, ssh_enabled,
-			   ray_installed, ray_version, python_version
+			   ray_installed, ray_version, python_version,
+			   has_gpu, gpu_model, gpu_count
 		FROM devices WHERE 1=1
 	`
 	args := []interface{}{}
@@ -148,11 +155,14 @@ func (r *DeviceRepository) scanDevice(row *sql.Row) (*domain.Device, error) {
 	var rayVersion, pythonVersion sql.NullString
 	var lastSeen, createdAt sql.NullTime
 
+	var gpuModel sql.NullString
+
 	err := row.Scan(
 		&d.ID, &d.Name, &d.Hostname, &ipAddressesJSON, &d.TailscaleIP,
 		&d.OS, &d.Status, &d.IsExternal, &tagsJSON, &d.User,
 		&lastSeen, &createdAt, &d.SSHEnabled, &d.RayInstalled,
 		&rayVersion, &pythonVersion,
+		&d.HasGPU, &gpuModel, &d.GPUCount,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -176,6 +186,9 @@ func (r *DeviceRepository) scanDevice(row *sql.Row) (*domain.Device, error) {
 	if createdAt.Valid {
 		d.CreatedAt = createdAt.Time
 	}
+	if gpuModel.Valid {
+		d.GPUModel = gpuModel.String
+	}
 
 	return &d, nil
 }
@@ -189,11 +202,14 @@ func (r *DeviceRepository) scanDevices(rows *sql.Rows) ([]*domain.Device, error)
 		var rayVersion, pythonVersion sql.NullString
 		var lastSeen, createdAt sql.NullTime
 
+		var gpuModel sql.NullString
+
 		err := rows.Scan(
 			&d.ID, &d.Name, &d.Hostname, &ipAddressesJSON, &d.TailscaleIP,
 			&d.OS, &d.Status, &d.IsExternal, &tagsJSON, &d.User,
 			&lastSeen, &createdAt, &d.SSHEnabled, &d.RayInstalled,
 			&rayVersion, &pythonVersion,
+			&d.HasGPU, &gpuModel, &d.GPUCount,
 		)
 		if err != nil {
 			return nil, err
@@ -213,6 +229,9 @@ func (r *DeviceRepository) scanDevices(rows *sql.Rows) ([]*domain.Device, error)
 		}
 		if createdAt.Valid {
 			d.CreatedAt = createdAt.Time
+		}
+		if gpuModel.Valid {
+			d.GPUModel = gpuModel.String
 		}
 
 		devices = append(devices, &d)

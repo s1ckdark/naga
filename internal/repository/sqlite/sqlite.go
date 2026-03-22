@@ -195,6 +195,24 @@ func (d *DB) migrate() error {
 			error TEXT
 		)`,
 
+		// Cluster mode column
+		`ALTER TABLE clusters ADD COLUMN mode TEXT DEFAULT 'basic'`,
+
+		// Cluster groups table
+		`CREATE TABLE IF NOT EXISTS cluster_groups (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			cluster_ids TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+
+		// GPU columns on devices (idempotent ALTER TABLEs)
+		`ALTER TABLE devices ADD COLUMN has_gpu INTEGER DEFAULT 0`,
+		`ALTER TABLE devices ADD COLUMN gpu_model TEXT DEFAULT ''`,
+		`ALTER TABLE devices ADD COLUMN gpu_count INTEGER DEFAULT 0`,
+
 		// Indexes
 		`CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_clusters_status ON clusters(status)`,
@@ -204,6 +222,10 @@ func (d *DB) migrate() error {
 
 	for _, migration := range migrations {
 		if _, err := d.db.Exec(migration); err != nil {
+			// ALTER TABLE ADD COLUMN fails if column already exists — safe to ignore
+			if strings.Contains(migration, "ALTER TABLE") && strings.Contains(err.Error(), "duplicate column") {
+				continue
+			}
 			return fmt.Errorf("migration failed: %w\nSQL: %s", err, migration)
 		}
 	}

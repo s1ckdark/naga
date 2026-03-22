@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -9,11 +10,17 @@ import (
 	"github.com/dave/clusterctl/internal/repository"
 )
 
+// GPUChecker checks GPU availability on a device
+type GPUChecker interface {
+	CollectGPUMetrics(ctx context.Context, device *domain.Device) *domain.GPUNodeMetrics
+}
+
 // DeviceUseCase handles device-related business logic
 type DeviceUseCase struct {
 	repos         *repository.Repositories
 	tailscale     TailscaleClient
 	sshCollector  MetricsCollector
+	gpuChecker    GPUChecker
 	cacheTTL      time.Duration
 	cachedDevices []*domain.Device
 	cacheTime     time.Time
@@ -43,6 +50,11 @@ func NewDeviceUseCase(repos *repository.Repositories, tailscale TailscaleClient,
 	}
 }
 
+// SetGPUChecker sets the GPU checker (optional dependency)
+func (uc *DeviceUseCase) SetGPUChecker(checker GPUChecker) {
+	uc.gpuChecker = checker
+}
+
 // ListDevices returns all devices, using cache if available
 func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]*domain.Device, error) {
 	if !forceRefresh {
@@ -61,7 +73,12 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 		return nil, err
 	}
 
-	// Update cache
+	// Merge GPU info from DB (Tailscale API doesn't know about GPUs)
+	if uc.repos != nil && uc.repos.Devices != nil {
+		uc.mergeGPUFromDB(ctx, devices)
+	}
+
+	// Update cache immediately (before GPU probe) so requests aren't blocked
 	uc.cacheMu.Lock()
 	uc.cachedDevices = devices
 	uc.cacheTime = time.Now()
@@ -69,11 +86,103 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 
 	// Save to repository for persistence
 	if uc.repos != nil && uc.repos.Devices != nil {
-		// Best-effort persistence without detaching from request lifecycle.
 		_ = uc.repos.Devices.SaveMany(ctx, devices)
 	}
 
+	// Check GPU on candidates in the background (non-blocking)
+	// Clone devices to avoid data race with the caller
+	if uc.gpuChecker != nil {
+		cloned := make([]*domain.Device, len(devices))
+		for i, d := range devices {
+			copy := *d
+			cloned[i] = &copy
+		}
+		go func(devs []*domain.Device) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			uc.probeGPU(bgCtx, devs)
+
+			// Update cache and DB with GPU results
+			uc.cacheMu.Lock()
+			uc.cachedDevices = devs
+			uc.cacheMu.Unlock()
+
+			if uc.repos != nil && uc.repos.Devices != nil {
+				_ = uc.repos.Devices.SaveMany(bgCtx, devs)
+			}
+		}(cloned)
+	}
+
 	return devices, nil
+}
+
+// mergeGPUFromDB restores GPU info from DB into freshly fetched Tailscale devices.
+func (uc *DeviceUseCase) mergeGPUFromDB(ctx context.Context, devices []*domain.Device) {
+	dbDevices, err := uc.repos.Devices.GetAll(ctx)
+	if err != nil {
+		return
+	}
+	dbMap := make(map[string]*domain.Device, len(dbDevices))
+	for _, d := range dbDevices {
+		dbMap[d.ID] = d
+	}
+	for _, d := range devices {
+		if saved, ok := dbMap[d.ID]; ok && saved.GPUModel != "" {
+			d.HasGPU = saved.HasGPU
+			d.GPUModel = saved.GPUModel
+			d.GPUCount = saved.GPUCount
+		}
+	}
+}
+
+// probeGPU checks GPU availability on candidate devices (Linux+SSH) that haven't been probed yet.
+func (uc *DeviceUseCase) probeGPU(ctx context.Context, devices []*domain.Device) {
+	var candidates []*domain.Device
+	for _, d := range devices {
+		// Only probe if not yet checked (GPUModel empty) and is a candidate
+		if d.IsGPUCandidate() && d.GPUModel == "" {
+			candidates = append(candidates, d)
+		}
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	log.Printf("Probing GPU on %d candidate devices...", len(candidates))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 5) // max 5 concurrent SSH sessions
+
+	for _, d := range candidates {
+		wg.Add(1)
+		go func(dev *domain.Device) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			metrics := uc.gpuChecker.CollectGPUMetrics(probeCtx, dev)
+			if metrics.Error != "" {
+				log.Printf("GPU probe failed on %s: %s", dev.GetDisplayName(), metrics.Error)
+				// Don't save "none" on error — leave empty so we retry next time
+				return
+			}
+			if metrics.HasGPU() {
+				dev.HasGPU = true
+				dev.GPUCount = len(metrics.GPUs)
+				dev.GPUModel = metrics.GPUs[0].Name
+				log.Printf("GPU found on %s: %dx %s", dev.GetDisplayName(), dev.GPUCount, dev.GPUModel)
+			} else {
+				dev.HasGPU = false
+				dev.GPUModel = "none"
+				dev.GPUCount = 0
+				log.Printf("No GPU on %s", dev.GetDisplayName())
+			}
+		}(d)
+	}
+	wg.Wait()
 }
 
 // GetDevice returns a specific device

@@ -50,7 +50,7 @@ func NewClusterUseCase(repos *repository.Repositories, rayManager RayManager) *C
 }
 
 // CreateCluster creates a new cluster configuration
-func (uc *ClusterUseCase) CreateCluster(ctx context.Context, name string, headID string, workerIDs []string) (*domain.Cluster, error) {
+func (uc *ClusterUseCase) CreateCluster(ctx context.Context, name string, headID string, workerIDs []string, mode ...domain.ClusterMode) (*domain.Cluster, error) {
 	// Check if cluster name already exists
 	existing, err := uc.repos.Clusters.GetByName(ctx, name)
 	if err != nil && !errors.Is(err, domain.ErrClusterNotFound) {
@@ -81,7 +81,11 @@ func (uc *ClusterUseCase) CreateCluster(ctx context.Context, name string, headID
 	}
 
 	// Create cluster
-	cluster := domain.NewCluster(name, headID, workerIDs)
+	clusterMode := domain.ClusterModeBasic
+	if len(mode) > 0 && mode[0] != "" {
+		clusterMode = mode[0]
+	}
+	cluster := domain.NewClusterWithMode(name, headID, workerIDs, clusterMode)
 
 	if err := uc.repos.Clusters.Create(ctx, cluster); err != nil {
 		return nil, fmt.Errorf("failed to create cluster: %w", err)

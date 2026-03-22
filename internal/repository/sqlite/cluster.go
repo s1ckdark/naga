@@ -31,12 +31,12 @@ func (r *ClusterRepository) Create(ctx context.Context, cluster *domain.Cluster)
 
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO clusters (
-			id, name, description, status, head_node_id, worker_ids,
+			id, name, description, mode, status, head_node_id, worker_ids,
 			dashboard_url, ray_port, dashboard_port, object_store_memory,
 			created_at, updated_at, started_at, stopped_at, last_error, last_error_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		cluster.ID, cluster.Name, cluster.Description, cluster.Status,
+		cluster.ID, cluster.Name, cluster.Description, cluster.Mode, cluster.Status,
 		cluster.HeadNodeID, string(workerIDs), cluster.DashboardURL,
 		cluster.RayPort, cluster.DashboardPort, cluster.ObjectStoreMemory,
 		cluster.CreatedAt, cluster.UpdatedAt, cluster.StartedAt, cluster.StoppedAt,
@@ -53,13 +53,13 @@ func (r *ClusterRepository) Update(ctx context.Context, cluster *domain.Cluster)
 
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE clusters SET
-			name = ?, description = ?, status = ?, head_node_id = ?,
+			name = ?, description = ?, mode = ?, status = ?, head_node_id = ?,
 			worker_ids = ?, dashboard_url = ?, ray_port = ?, dashboard_port = ?,
 			object_store_memory = ?, updated_at = ?, started_at = ?, stopped_at = ?,
 			last_error = ?, last_error_at = ?
 		WHERE id = ?
 	`,
-		cluster.Name, cluster.Description, cluster.Status, cluster.HeadNodeID,
+		cluster.Name, cluster.Description, cluster.Mode, cluster.Status, cluster.HeadNodeID,
 		string(workerIDs), cluster.DashboardURL, cluster.RayPort, cluster.DashboardPort,
 		cluster.ObjectStoreMemory, cluster.UpdatedAt, cluster.StartedAt, cluster.StoppedAt,
 		cluster.LastError, cluster.LastErrorAt, cluster.ID,
@@ -79,7 +79,7 @@ func (r *ClusterRepository) Update(ctx context.Context, cluster *domain.Cluster)
 // GetByID retrieves a cluster by its ID
 func (r *ClusterRepository) GetByID(ctx context.Context, id string) (*domain.Cluster, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters WHERE id = ?
@@ -91,7 +91,7 @@ func (r *ClusterRepository) GetByID(ctx context.Context, id string) (*domain.Clu
 // GetByName retrieves a cluster by its name
 func (r *ClusterRepository) GetByName(ctx context.Context, name string) (*domain.Cluster, error) {
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters WHERE name = ?
@@ -103,7 +103,7 @@ func (r *ClusterRepository) GetByName(ctx context.Context, name string) (*domain
 // GetAll retrieves all clusters
 func (r *ClusterRepository) GetAll(ctx context.Context) ([]*domain.Cluster, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters ORDER BY created_at DESC
@@ -119,7 +119,7 @@ func (r *ClusterRepository) GetAll(ctx context.Context) ([]*domain.Cluster, erro
 // GetByStatus retrieves clusters by status
 func (r *ClusterRepository) GetByStatus(ctx context.Context, status domain.ClusterStatus) ([]*domain.Cluster, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters WHERE status = ? ORDER BY created_at DESC
@@ -151,7 +151,7 @@ func (r *ClusterRepository) Delete(ctx context.Context, id string) error {
 func (r *ClusterRepository) GetClusterByDeviceID(ctx context.Context, deviceID string) (*domain.Cluster, error) {
 	// Check head node first
 	row := r.db.QueryRowContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters WHERE head_node_id = ?
@@ -164,7 +164,7 @@ func (r *ClusterRepository) GetClusterByDeviceID(ctx context.Context, deviceID s
 
 	// Check worker IDs (JSON array search)
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, name, description, status, head_node_id, worker_ids,
+		SELECT id, name, description, mode, status, head_node_id, worker_ids,
 			   dashboard_url, ray_port, dashboard_port, object_store_memory,
 			   created_at, updated_at, started_at, stopped_at, last_error, last_error_at
 		FROM clusters
@@ -193,11 +193,11 @@ func (r *ClusterRepository) GetClusterByDeviceID(ctx context.Context, deviceID s
 func (r *ClusterRepository) scanCluster(row *sql.Row) (*domain.Cluster, error) {
 	var c domain.Cluster
 	var workerIDsJSON string
-	var description, dashboardURL, lastError sql.NullString
+	var description, mode, dashboardURL, lastError sql.NullString
 	var startedAt, stoppedAt, lastErrorAt sql.NullTime
 
 	err := row.Scan(
-		&c.ID, &c.Name, &description, &c.Status, &c.HeadNodeID, &workerIDsJSON,
+		&c.ID, &c.Name, &description, &mode, &c.Status, &c.HeadNodeID, &workerIDsJSON,
 		&dashboardURL, &c.RayPort, &c.DashboardPort, &c.ObjectStoreMemory,
 		&c.CreatedAt, &c.UpdatedAt, &startedAt, &stoppedAt, &lastError, &lastErrorAt,
 	)
@@ -210,6 +210,11 @@ func (r *ClusterRepository) scanCluster(row *sql.Row) (*domain.Cluster, error) {
 
 	if description.Valid {
 		c.Description = description.String
+	}
+	if mode.Valid && mode.String != "" {
+		c.Mode = domain.ClusterMode(mode.String)
+	} else {
+		c.Mode = domain.ClusterModeBasic
 	}
 	if dashboardURL.Valid {
 		c.DashboardURL = dashboardURL.String
@@ -238,11 +243,11 @@ func (r *ClusterRepository) scanCluster(row *sql.Row) (*domain.Cluster, error) {
 func (r *ClusterRepository) scanClusterFromRows(rows *sql.Rows) (*domain.Cluster, error) {
 	var c domain.Cluster
 	var workerIDsJSON string
-	var description, dashboardURL, lastError sql.NullString
+	var description, mode, dashboardURL, lastError sql.NullString
 	var startedAt, stoppedAt, lastErrorAt sql.NullTime
 
 	err := rows.Scan(
-		&c.ID, &c.Name, &description, &c.Status, &c.HeadNodeID, &workerIDsJSON,
+		&c.ID, &c.Name, &description, &mode, &c.Status, &c.HeadNodeID, &workerIDsJSON,
 		&dashboardURL, &c.RayPort, &c.DashboardPort, &c.ObjectStoreMemory,
 		&c.CreatedAt, &c.UpdatedAt, &startedAt, &stoppedAt, &lastError, &lastErrorAt,
 	)
@@ -252,6 +257,11 @@ func (r *ClusterRepository) scanClusterFromRows(rows *sql.Rows) (*domain.Cluster
 
 	if description.Valid {
 		c.Description = description.String
+	}
+	if mode.Valid && mode.String != "" {
+		c.Mode = domain.ClusterMode(mode.String)
+	} else {
+		c.Mode = domain.ClusterModeBasic
 	}
 	if dashboardURL.Valid {
 		c.DashboardURL = dashboardURL.String
