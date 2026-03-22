@@ -198,6 +198,16 @@ func (d *DB) migrate() error {
 		// Cluster mode column
 		`ALTER TABLE clusters ADD COLUMN mode TEXT DEFAULT 'basic'`,
 
+		// Cluster groups table
+		`CREATE TABLE IF NOT EXISTS cluster_groups (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			cluster_ids TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+
 		// GPU columns on devices (idempotent ALTER TABLEs)
 		`ALTER TABLE devices ADD COLUMN has_gpu INTEGER DEFAULT 0`,
 		`ALTER TABLE devices ADD COLUMN gpu_model TEXT DEFAULT ''`,

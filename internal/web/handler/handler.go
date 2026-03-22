@@ -1290,58 +1290,91 @@ func (h *Handler) APIClusterExecute(c echo.Context) error {
 		return internalError(c, "failed to get devices", err)
 	}
 
-	var workers []*domain.Device
-	for _, wid := range cluster.WorkerIDs {
-		if d, ok := devices[wid]; ok && d.IsOnline() {
-			workers = append(workers, d)
-		}
-	}
-
-	if len(workers) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"cluster_id": id,
-			"command":    req.Command,
-			"results":    []TaskResult{},
-			"message":    "no online workers",
-		})
-	}
-
-	results := make([]TaskResult, len(workers))
+	// Resolve workers: devices execute directly, sub-clusters delegate
+	var results []TaskResult
+	var mu sync.Mutex
 	var wg sync.WaitGroup
+	timeout := time.Duration(req.TimeoutSeconds) * time.Second
 
-	for i, w := range workers {
+	for _, ref := range cluster.WorkerRefs() {
 		wg.Add(1)
-		go func(idx int, dev *domain.Device) {
-			defer wg.Done()
-			start := time.Now()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.TimeoutSeconds)*time.Second)
-			defer cancel()
-
-			output, execErr := h.executor.Execute(ctx, dev, req.Command)
-			r := TaskResult{
-				DeviceID:   dev.ID,
-				DeviceName: dev.GetDisplayName(),
-				Duration:   float64(time.Since(start).Milliseconds()),
-			}
-			if dev.HasGPU {
-				r.GPU = fmt.Sprintf("%dx %s", dev.GPUCount, dev.GPUModel)
-			}
-			if execErr != nil {
-				r.Error = execErr.Error()
-			} else {
-				r.Output = strings.TrimSpace(output)
-			}
-			results[idx] = r
-		}(i, w)
+		if ref.IsCluster() {
+			// Sub-cluster: recursively execute via API
+			go func(clusterID string) {
+				defer wg.Done()
+				start := time.Now()
+				subCluster, err := h.clusterUC.GetCluster(c.Request().Context(), clusterID)
+				if err != nil {
+					mu.Lock()
+					results = append(results, TaskResult{
+						DeviceID: clusterID, DeviceName: "cluster:" + clusterID,
+						Error: "sub-cluster not found", Duration: float64(time.Since(start).Milliseconds()),
+					})
+					mu.Unlock()
+					return
+				}
+				// Execute on sub-cluster's device workers
+				for _, subRef := range subCluster.WorkerRefs() {
+					if !subRef.IsDevice() {
+						continue // only one level of nesting
+					}
+					wg.Add(1)
+					go func(devID string) {
+						defer wg.Done()
+						s := time.Now()
+						r := h.executeOnDeviceByID(devID, req.Command, timeout, devices)
+						r.DeviceName = subCluster.Name + "/" + r.DeviceName
+						r.Duration = float64(time.Since(s).Milliseconds())
+						mu.Lock()
+						results = append(results, r)
+						mu.Unlock()
+					}(subRef.ID())
+				}
+			}(ref.ID())
+		} else {
+			// Direct device worker
+			go func(devID string) {
+				defer wg.Done()
+				start := time.Now()
+				r := h.executeOnDeviceByID(devID, req.Command, timeout, devices)
+				r.Duration = float64(time.Since(start).Milliseconds())
+				mu.Lock()
+				results = append(results, r)
+				mu.Unlock()
+			}(ref.ID())
+		}
 	}
 	wg.Wait()
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"cluster_id":   id,
 		"command":      req.Command,
-		"worker_count": len(workers),
+		"worker_count": len(results),
 		"results":      results,
 	})
+}
+
+// executeOnDeviceByID runs a command on a single device and returns a TaskResult
+func (h *Handler) executeOnDeviceByID(deviceID, command string, timeout time.Duration, devices map[string]*domain.Device) TaskResult {
+	dev, ok := devices[deviceID]
+	if !ok || !dev.IsOnline() {
+		return TaskResult{DeviceID: deviceID, DeviceName: deviceID, Error: "device offline or not found"}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	output, err := h.executor.Execute(ctx, dev, command)
+	r := TaskResult{DeviceID: dev.ID, DeviceName: dev.GetDisplayName()}
+	if dev.HasGPU {
+		r.GPU = fmt.Sprintf("%dx %s", dev.GPUCount, dev.GPUModel)
+	}
+	if err != nil {
+		r.Error = err.Error()
+	} else {
+		r.Output = strings.TrimSpace(output)
+	}
+	return r
 }
 
 // APIExecuteOnDevice runs a command on a single device and returns JSON
