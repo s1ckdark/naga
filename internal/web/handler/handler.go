@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -30,6 +31,11 @@ type TaskResult struct {
 	Output     string  `json:"output"`
 	Error      string  `json:"error,omitempty"`
 	Duration   float64 `json:"durationMs"`
+}
+
+// esc escapes a string for safe HTML output
+func esc(s string) string {
+	return html.EscapeString(s)
 }
 
 // internalError logs the full error and returns a generic message to the client.
@@ -467,10 +473,10 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 	<td class="px-6 py-4 whitespace-nowrap text-sm">%s</td>
 </tr>`,
 			url.PathEscape(d.ID),
-			d.GetDisplayName(), d.Hostname,
-			d.TailscaleIP,
-			d.OS,
-			statusColor, statusColor, statusLabel,
+			esc(d.GetDisplayName()), esc(d.Hostname),
+			esc(d.TailscaleIP),
+			esc(d.OS),
+			statusColor, statusColor, esc(statusLabel),
 			sshBadge,
 			gpuBadge,
 		))
@@ -512,15 +518,15 @@ func (h *Handler) HTMXDeviceDetail(c echo.Context) error {
 
 	var b strings.Builder
 	b.WriteString(`<div class="bg-white rounded-lg shadow p-6">`)
-	b.WriteString(fmt.Sprintf(`<h2 class="text-2xl font-bold text-gray-800 mb-4">%s</h2>`, device.GetDisplayName()))
+	b.WriteString(fmt.Sprintf(`<h2 class="text-2xl font-bold text-gray-800 mb-4">%s</h2>`, esc(device.GetDisplayName())))
 	b.WriteString(`<div class="grid grid-cols-2 gap-4">`)
 
 	fields := [][2]string{
-		{"Hostname", device.Hostname},
-		{"Tailscale IP", device.TailscaleIP},
-		{"OS", device.OS},
-		{"Status", string(device.Status)},
-		{"User", device.User},
+		{"Hostname", esc(device.Hostname)},
+		{"Tailscale IP", esc(device.TailscaleIP)},
+		{"OS", esc(device.OS)},
+		{"Status", esc(string(device.Status))},
+		{"User", esc(device.User)},
 		{"Last Seen", device.LastSeen.Format("2006-01-02 15:04:05")},
 	}
 	for _, f := range fields {
@@ -587,7 +593,7 @@ func (h *Handler) HTMXClusterList(c echo.Context) error {
 	</td>
 	<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">%s</td>
 	<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">%d</td>
-</tr>`, cl.ID, cl.Name, statusColor, statusColor, cl.Status, cl.HeadNodeID, len(cl.WorkerIDs)))
+</tr>`, url.PathEscape(cl.ID), esc(cl.Name), statusColor, statusColor, esc(string(cl.Status)), esc(cl.HeadNodeID), len(cl.WorkerIDs)))
 	}
 	b.WriteString(`</tbody></table></div>`)
 
@@ -617,12 +623,12 @@ func (h *Handler) HTMXClusterDetail(c echo.Context) error {
 	<div><span class="text-sm text-gray-500">Head Node</span><p class="font-medium">%s</p></div>
 	<div><span class="text-sm text-gray-500">Workers</span><p class="font-medium">%d nodes</p></div>
 	<div><span class="text-sm text-gray-500">Dashboard</span><p class="font-medium">%s</p></div>
-</div>`, cluster.Name, cluster.Status, cluster.HeadNodeID, len(cluster.WorkerIDs), cluster.DashboardURL))
+</div>`, esc(cluster.Name), esc(string(cluster.Status)), esc(cluster.HeadNodeID), len(cluster.WorkerIDs), esc(cluster.DashboardURL)))
 
 	if len(cluster.WorkerIDs) > 0 {
 		b.WriteString(`<div class="mt-4"><h3 class="text-lg font-semibold text-gray-700 mb-2">Worker Nodes</h3><ul class="list-disc list-inside">`)
 		for _, wid := range cluster.WorkerIDs {
-			b.WriteString(fmt.Sprintf(`<li class="text-sm text-gray-600">%s</li>`, wid))
+			b.WriteString(fmt.Sprintf(`<li class="text-sm text-gray-600">%s</li>`, esc(wid)))
 		}
 		b.WriteString(`</ul></div>`)
 	}
@@ -647,7 +653,7 @@ func (h *Handler) HTMXDeviceOptions(c echo.Context) error {
 	b.WriteString(`<option value="">Select a device...</option>`)
 	for _, d := range devices {
 		if d.IsOnline() {
-			b.WriteString(fmt.Sprintf(`<option value="%s">%s (%s)</option>`, d.ID, d.GetDisplayName(), d.TailscaleIP))
+			b.WriteString(fmt.Sprintf(`<option value="%s">%s (%s)</option>`, url.PathEscape(d.ID), esc(d.GetDisplayName()), esc(d.TailscaleIP)))
 		}
 	}
 	return c.HTML(http.StatusOK, b.String())
@@ -689,7 +695,7 @@ func (h *Handler) HTMXDeviceCheckboxes(c echo.Context) error {
 	<span class="text-sm node-name">%s</span>
 	<span class="text-xs text-purple-600 font-medium">%dx %s</span>
 	<span class="text-xs text-gray-400">%s</span>
-</label>`, d.ID, d.GetDisplayName(), d.GPUCount, d.GPUModel, d.TailscaleIP))
+</label>`, url.PathEscape(d.ID), esc(d.GetDisplayName()), d.GPUCount, esc(d.GPUModel), esc(d.TailscaleIP)))
 		}
 	}
 
@@ -700,7 +706,7 @@ func (h *Handler) HTMXDeviceCheckboxes(c echo.Context) error {
 	<input type="checkbox" name="workers" value="%s" class="rounded border-gray-300">
 	<span class="text-sm node-name">%s</span>
 	<span class="text-xs text-gray-400">%s · %s</span>
-</label>`, d.ID, d.GetDisplayName(), d.OS, d.TailscaleIP))
+</label>`, url.PathEscape(d.ID), esc(d.GetDisplayName()), esc(d.OS), esc(d.TailscaleIP)))
 		}
 	}
 
@@ -1193,7 +1199,7 @@ func (h *Handler) ClusterExecuteTask(c echo.Context) error {
 			<h3 class="text-lg font-semibold text-gray-800">Results from %d workers</h3>
 			<span class="text-xs text-gray-400">Command: <code class="bg-gray-100 px-1 rounded">%s</code></span>
 		</div>
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-3">`, len(workers), command))
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-3">`, len(workers), esc(command)))
 
 	for _, r := range results {
 		borderColor := "green"
@@ -1203,18 +1209,18 @@ func (h *Handler) ClusterExecuteTask(c echo.Context) error {
 		b.WriteString(fmt.Sprintf(`<div class="border-l-4 border-%s-400 bg-white rounded shadow p-3">
 			<div class="flex justify-between items-start">
 				<div>
-					<span class="font-medium text-sm">%s</span>`, borderColor, r.DeviceName))
+					<span class="font-medium text-sm">%s</span>`, borderColor, esc(r.DeviceName)))
 		if r.GPU != "" {
-			b.WriteString(fmt.Sprintf(`<span class="ml-2 text-xs text-purple-600">%s</span>`, r.GPU))
+			b.WriteString(fmt.Sprintf(`<span class="ml-2 text-xs text-purple-600">%s</span>`, esc(r.GPU)))
 		}
 		b.WriteString(fmt.Sprintf(`</div>
 				<span class="text-xs text-gray-400">%.0fms</span>
 			</div>`, r.Duration))
 
 		if r.Error != "" {
-			b.WriteString(fmt.Sprintf(`<pre class="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded overflow-x-auto">%s</pre>`, r.Error))
+			b.WriteString(fmt.Sprintf(`<pre class="mt-2 text-xs text-red-600 bg-red-50 p-2 rounded overflow-x-auto">%s</pre>`, esc(r.Error)))
 		} else {
-			b.WriteString(fmt.Sprintf(`<pre class="mt-2 text-xs text-gray-700 bg-gray-50 p-2 rounded overflow-x-auto">%s</pre>`, r.Output))
+			b.WriteString(fmt.Sprintf(`<pre class="mt-2 text-xs text-gray-700 bg-gray-50 p-2 rounded overflow-x-auto">%s</pre>`, esc(r.Output)))
 		}
 		b.WriteString(`</div>`)
 	}

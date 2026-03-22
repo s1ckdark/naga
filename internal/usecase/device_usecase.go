@@ -78,12 +78,7 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 		uc.mergeGPUFromDB(ctx, devices)
 	}
 
-	// Check GPU on candidates that haven't been checked yet
-	if uc.gpuChecker != nil {
-		uc.probeGPU(ctx, devices)
-	}
-
-	// Update cache
+	// Update cache immediately (before GPU probe) so requests aren't blocked
 	uc.cacheMu.Lock()
 	uc.cachedDevices = devices
 	uc.cacheTime = time.Now()
@@ -91,8 +86,25 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 
 	// Save to repository for persistence
 	if uc.repos != nil && uc.repos.Devices != nil {
-		// Best-effort persistence without detaching from request lifecycle.
 		_ = uc.repos.Devices.SaveMany(ctx, devices)
+	}
+
+	// Check GPU on candidates in the background (non-blocking)
+	if uc.gpuChecker != nil {
+		go func(devs []*domain.Device) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			defer cancel()
+			uc.probeGPU(bgCtx, devs)
+
+			// Update cache and DB with GPU results
+			uc.cacheMu.Lock()
+			uc.cachedDevices = devs
+			uc.cacheMu.Unlock()
+
+			if uc.repos != nil && uc.repos.Devices != nil {
+				_ = uc.repos.Devices.SaveMany(bgCtx, devs)
+			}
+		}(devices)
 	}
 
 	return devices, nil
