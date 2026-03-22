@@ -57,3 +57,4 @@ config.yaml
 # MCP server
 mcp-server/node_modules/
 mcp-server/dist/
+ClusterManager/.build/
