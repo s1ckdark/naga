@@ -164,6 +164,8 @@ func main() {
 	apiWrite.DELETE("/clusters/:id/workers/:deviceId", h.APIClusterRemoveWorker)
 	apiWrite.PUT("/clusters/:id/head", h.APIClusterChangeHead)
 	apiWrite.POST("/clusters/:id/failover", h.APIClusterFailover)
+	apiWrite.POST("/clusters/:id/execute", h.APIClusterExecute)
+	apiWrite.POST("/devices/:id/execute", h.APIExecuteOnDevice)
 
 	// Health check
 	e.GET("/health", func(c echo.Context) error {

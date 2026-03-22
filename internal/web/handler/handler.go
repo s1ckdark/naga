@@ -376,22 +376,33 @@ func (h *Handler) ClusterDelete(c echo.Context) error {
 
 // APIClusterCreate handles cluster creation API
 func (h *Handler) APIClusterCreate(c echo.Context) error {
-	name := c.FormValue("name")
-	if name == "" {
+	var req struct {
+		Name      string   `json:"name"`
+		HeadID    string   `json:"head_id"`
+		WorkerIDs []string `json:"worker_ids"`
+	}
+	if err := c.Bind(&req); err != nil {
+		// Fallback to form values for HTMX compatibility
+		req.Name = c.FormValue("name")
+		req.HeadID = c.FormValue("head")
+	}
+	if req.Name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 	}
-
-	headID := c.FormValue("head")
-	if headID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "head node is required"})
+	if req.HeadID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "head_id is required"})
 	}
 
-	// TODO: Create cluster using usecase
-	return c.JSON(http.StatusOK, map[string]string{
-		"status":  "created",
-		"name":    name,
-		"message": "Cluster created successfully",
-	})
+	if h.clusterUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cluster service not available"})
+	}
+
+	cluster, err := h.clusterUC.CreateCluster(c.Request().Context(), req.Name, req.HeadID, req.WorkerIDs)
+	if err != nil {
+		return internalError(c, "failed to create cluster", err)
+	}
+
+	return c.JSON(http.StatusOK, cluster)
 }
 
 // APIClusterDelete handles cluster deletion API
@@ -400,13 +411,22 @@ func (h *Handler) APIClusterDelete(c echo.Context) error {
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "cluster id is required"})
 	}
+	force := c.QueryParam("force") == "true"
 
-	// TODO: Delete cluster using usecase
-	return c.JSON(http.StatusOK, map[string]string{
-		"status":  "deleted",
-		"id":      id,
-		"message": "Cluster deleted successfully",
-	})
+	if h.clusterUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cluster service not available"})
+	}
+
+	devices, err := h.deviceUC.GetDeviceMap(c.Request().Context())
+	if err != nil {
+		return internalError(c, "failed to get devices", err)
+	}
+
+	if err := h.clusterUC.DeleteCluster(c.Request().Context(), id, devices, force); err != nil {
+		return internalError(c, "failed to delete cluster", err)
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }
 
 // HTMXDeviceList returns device list as HTML fragment for HTMX
@@ -1227,4 +1247,145 @@ func (h *Handler) ClusterExecuteTask(c echo.Context) error {
 
 	b.WriteString(`</div></div>`)
 	return c.HTML(http.StatusOK, b.String())
+}
+
+// APIClusterExecute runs a command on all cluster workers and returns JSON results
+func (h *Handler) APIClusterExecute(c echo.Context) error {
+	id := c.Param("id")
+
+	var req struct {
+		Command        string `json:"command"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.Command == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+	if req.TimeoutSeconds <= 0 {
+		req.TimeoutSeconds = 30
+	}
+	if req.TimeoutSeconds > 300 {
+		req.TimeoutSeconds = 300
+	}
+
+	if h.clusterUC == nil || h.executor == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service not available"})
+	}
+
+	cluster, err := h.clusterUC.GetCluster(c.Request().Context(), id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "cluster not found"})
+	}
+
+	devices, err := h.deviceUC.GetDeviceMap(c.Request().Context())
+	if err != nil {
+		return internalError(c, "failed to get devices", err)
+	}
+
+	var workers []*domain.Device
+	for _, wid := range cluster.WorkerIDs {
+		if d, ok := devices[wid]; ok && d.IsOnline() {
+			workers = append(workers, d)
+		}
+	}
+
+	if len(workers) == 0 {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"cluster_id": id,
+			"command":    req.Command,
+			"results":    []TaskResult{},
+			"message":    "no online workers",
+		})
+	}
+
+	results := make([]TaskResult, len(workers))
+	var wg sync.WaitGroup
+
+	for i, w := range workers {
+		wg.Add(1)
+		go func(idx int, dev *domain.Device) {
+			defer wg.Done()
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.TimeoutSeconds)*time.Second)
+			defer cancel()
+
+			output, execErr := h.executor.Execute(ctx, dev, req.Command)
+			r := TaskResult{
+				DeviceID:   dev.ID,
+				DeviceName: dev.GetDisplayName(),
+				Duration:   float64(time.Since(start).Milliseconds()),
+			}
+			if dev.HasGPU {
+				r.GPU = fmt.Sprintf("%dx %s", dev.GPUCount, dev.GPUModel)
+			}
+			if execErr != nil {
+				r.Error = execErr.Error()
+			} else {
+				r.Output = strings.TrimSpace(output)
+			}
+			results[idx] = r
+		}(i, w)
+	}
+	wg.Wait()
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"cluster_id":   id,
+		"command":      req.Command,
+		"worker_count": len(workers),
+		"results":      results,
+	})
+}
+
+// APIExecuteOnDevice runs a command on a single device and returns JSON
+func (h *Handler) APIExecuteOnDevice(c echo.Context) error {
+	id := c.Param("id")
+
+	var req struct {
+		Command        string `json:"command"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.Command == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+	if req.TimeoutSeconds <= 0 {
+		req.TimeoutSeconds = 30
+	}
+	if req.TimeoutSeconds > 300 {
+		req.TimeoutSeconds = 300
+	}
+
+	if h.executor == nil || h.deviceUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service not available"})
+	}
+
+	device, err := h.deviceUC.GetDevice(c.Request().Context(), id)
+	if err != nil || device == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "device not found"})
+	}
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.TimeoutSeconds)*time.Second)
+	defer cancel()
+
+	output, execErr := h.executor.Execute(ctx, device, req.Command)
+	r := TaskResult{
+		DeviceID:   device.ID,
+		DeviceName: device.GetDisplayName(),
+		Duration:   float64(time.Since(start).Milliseconds()),
+	}
+	if device.HasGPU {
+		r.GPU = fmt.Sprintf("%dx %s", device.GPUCount, device.GPUModel)
+	}
+	if execErr != nil {
+		r.Error = execErr.Error()
+	} else {
+		r.Output = strings.TrimSpace(output)
+	}
+
+	return c.JSON(http.StatusOK, r)
 }

@@ -51,4 +51,9 @@ config.yaml
 # Claude/OMC
 .cache/
 .omc/
-.claude/
+.claude/*
+!.claude/mcp.json
+
+# MCP server
+mcp-server/node_modules/
+mcp-server/dist/
