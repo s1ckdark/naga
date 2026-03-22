@@ -90,7 +90,13 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 	}
 
 	// Check GPU on candidates in the background (non-blocking)
+	// Clone devices to avoid data race with the caller
 	if uc.gpuChecker != nil {
+		cloned := make([]*domain.Device, len(devices))
+		for i, d := range devices {
+			copy := *d
+			cloned[i] = &copy
+		}
 		go func(devs []*domain.Device) {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
@@ -104,7 +110,7 @@ func (uc *DeviceUseCase) ListDevices(ctx context.Context, forceRefresh bool) ([]
 			if uc.repos != nil && uc.repos.Devices != nil {
 				_ = uc.repos.Devices.SaveMany(bgCtx, devs)
 			}
-		}(devices)
+		}(cloned)
 	}
 
 	return devices, nil

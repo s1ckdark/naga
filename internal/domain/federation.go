@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // WorkerRef represents a reference to either a device or a sub-cluster.
@@ -82,6 +84,7 @@ type ClusterGroup struct {
 func NewClusterGroup(name string, clusterIDs []string) *ClusterGroup {
 	now := time.Now()
 	return &ClusterGroup{
+		ID:         uuid.New().String(),
 		Name:       name,
 		ClusterIDs: clusterIDs,
 		CreatedAt:  now,

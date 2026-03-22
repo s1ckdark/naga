@@ -29,12 +29,13 @@ export function registerClusterTools(server: McpServer) {
     {
       name: z.string().describe("Cluster name"),
       head_id: z.string().describe("Head node device ID"),
-      worker_ids: z.array(z.string()).optional().describe("Worker node device IDs"),
+      worker_ids: z.array(z.string()).optional().describe("Worker node device/cluster IDs (use 'device:id' or 'cluster:id' prefix)"),
+      mode: z.enum(["basic", "ray"]).optional().describe("Cluster mode: basic (SSH) or ray (Ray cluster). Default: basic"),
     },
-    async ({ name, head_id, worker_ids }) => {
+    async ({ name, head_id, worker_ids, mode }) => {
       const cluster = await apiCall<Cluster>("/api/clusters", {
         method: "POST",
-        body: { name, head_id, worker_ids: worker_ids || [] },
+        body: { name, head_id, worker_ids: worker_ids || [], mode: mode || "basic" },
       });
       return { content: [{ type: "text" as const, text: JSON.stringify(cluster, null, 2) }] };
     },

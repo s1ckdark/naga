@@ -334,7 +334,7 @@ func (h *Handler) ClusterCreate(c echo.Context) error {
 	cluster, err := h.clusterUC.CreateCluster(c.Request().Context(), name, headID, filteredWorkers)
 	if err != nil {
 		log.Printf("internal error: create cluster: %v", err)
-		return c.HTML(http.StatusOK, fmt.Sprintf(`<p class="text-red-500">Failed to create cluster: %s</p>`, err.Error()))
+		return c.HTML(http.StatusOK, fmt.Sprintf(`<p class="text-red-500">Failed to create cluster: %s</p>`, esc(err.Error())))
 	}
 
 	return c.HTML(http.StatusOK, fmt.Sprintf(`<div class="bg-green-50 border border-green-200 rounded p-4">
@@ -1074,7 +1074,7 @@ func (h *Handler) APIClusterFailover(c echo.Context) error {
 
 // ClusterExecutePage renders the distributed task execution page
 func (h *Handler) ClusterExecutePage(c echo.Context) error {
-	id := c.Param("id")
+	id := url.PathEscape(c.Param("id"))
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
@@ -1269,6 +1269,9 @@ func (h *Handler) APIClusterExecute(c echo.Context) error {
 	if req.Command == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
 	}
+	if err := validateCommand(req.Command); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
 	if req.TimeoutSeconds <= 0 {
 		req.TimeoutSeconds = 30
 	}
@@ -1295,14 +1298,27 @@ func (h *Handler) APIClusterExecute(c echo.Context) error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	timeout := time.Duration(req.TimeoutSeconds) * time.Second
+	visited := map[string]bool{id: true} // track visited clusters to prevent cycles
 
 	for _, ref := range cluster.WorkerRefs() {
 		wg.Add(1)
 		if ref.IsCluster() {
-			// Sub-cluster: recursively execute via API
+			// Sub-cluster: execute on its device workers (max 1 level deep)
 			go func(clusterID string) {
 				defer wg.Done()
 				start := time.Now()
+
+				// Cycle detection
+				if visited[clusterID] {
+					mu.Lock()
+					results = append(results, TaskResult{
+						DeviceID: clusterID, DeviceName: "cluster:" + clusterID,
+						Error: "circular reference detected", Duration: float64(time.Since(start).Milliseconds()),
+					})
+					mu.Unlock()
+					return
+				}
+
 				subCluster, err := h.clusterUC.GetCluster(c.Request().Context(), clusterID)
 				if err != nil {
 					mu.Lock()
@@ -1313,10 +1329,10 @@ func (h *Handler) APIClusterExecute(c echo.Context) error {
 					mu.Unlock()
 					return
 				}
-				// Execute on sub-cluster's device workers
+				// Execute on sub-cluster's device workers only (no deeper nesting)
 				for _, subRef := range subCluster.WorkerRefs() {
 					if !subRef.IsDevice() {
-						continue // only one level of nesting
+						continue
 					}
 					wg.Add(1)
 					go func(devID string) {
@@ -1390,6 +1406,9 @@ func (h *Handler) APIExecuteOnDevice(c echo.Context) error {
 	}
 	if req.Command == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+	if err := validateCommand(req.Command); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if req.TimeoutSeconds <= 0 {
 		req.TimeoutSeconds = 30

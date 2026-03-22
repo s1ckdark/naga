@@ -57,12 +57,13 @@ export interface Cluster {
   id: string;
   name: string;
   description: string;
+  mode: string; // "basic" or "ray"
   status: string;
   headNodeId: string;
   workerIds: string[];
   dashboardUrl: string;
-  rayPort: number;
-  dashboardPort: number;
+  rayPort?: number;
+  dashboardPort?: number;
   createdAt: string;
   updatedAt: string;
 }
