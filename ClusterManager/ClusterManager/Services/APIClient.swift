@@ -58,6 +58,10 @@ actor APIClient {
         return try await post("/api/clusters", body: req)
     }
 
+    func getGPUMonitor() async throws -> GPUMonitorResponse {
+        return try await get("/api/monitor/gpu")
+    }
+
     func deleteCluster(id: String, force: Bool = false) async throws {
         let path = force ? "/api/clusters/\(id)?force=true" : "/api/clusters/\(id)"
         let _: [String: String] = try await delete(path)

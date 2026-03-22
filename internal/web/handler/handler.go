@@ -1389,3 +1389,252 @@ func (h *Handler) APIExecuteOnDevice(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, r)
 }
+
+// APIGPUMonitor returns live GPU metrics from all GPU nodes
+func (h *Handler) APIGPUMonitor(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	if h.deviceUC == nil || h.executor == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "service not available"})
+	}
+
+	devices, err := h.deviceUC.ListDevices(ctx, false)
+	if err != nil {
+		return internalError(c, "failed to list devices", err)
+	}
+
+	var gpuDevices []*domain.Device
+	for _, d := range devices {
+		if d.HasGPU && d.IsOnline() {
+			gpuDevices = append(gpuDevices, d)
+		}
+	}
+
+	type GPUNodeStatus struct {
+		DeviceID   string           `json:"deviceId"`
+		DeviceName string           `json:"deviceName"`
+		IP         string           `json:"ip"`
+		GPUModel   string           `json:"gpuModel"`
+		GPUCount   int              `json:"gpuCount"`
+		GPUs       []domain.GPUInfo `json:"gpus"`
+		Error      string           `json:"error,omitempty"`
+	}
+
+	results := make([]GPUNodeStatus, len(gpuDevices))
+	var wg sync.WaitGroup
+
+	for i, d := range gpuDevices {
+		wg.Add(1)
+		go func(idx int, dev *domain.Device) {
+			defer wg.Done()
+			sshCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			output, err := h.executor.Execute(sshCtx, dev, "nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv,noheader,nounits")
+			r := GPUNodeStatus{
+				DeviceID:   dev.ID,
+				DeviceName: dev.GetDisplayName(),
+				IP:         dev.TailscaleIP,
+				GPUModel:   dev.GPUModel,
+				GPUCount:   dev.GPUCount,
+			}
+			if err != nil {
+				r.Error = err.Error()
+			} else {
+				gpus, parseErr := domain.ParseNvidiaSmiOutput(output)
+				if parseErr != nil {
+					r.Error = parseErr.Error()
+				} else {
+					r.GPUs = gpus
+				}
+			}
+			results[idx] = r
+		}(i, d)
+	}
+	wg.Wait()
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"timestamp": time.Now(),
+		"nodes":     results,
+		"nodeCount": len(gpuDevices),
+	})
+}
+
+// APIMetricsSnapshot returns system metrics for all devices
+func (h *Handler) APIMetricsSnapshot(c echo.Context) error {
+	if h.monitorUC == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "monitor not available"})
+	}
+
+	snapshot, err := h.monitorUC.GetAllMetrics(c.Request().Context())
+	if err != nil {
+		return internalError(c, "failed to get metrics", err)
+	}
+
+	return c.JSON(http.StatusOK, snapshot)
+}
+
+// MonitorPage renders the GPU monitoring page
+func (h *Handler) MonitorPage(c echo.Context) error {
+	return c.HTML(http.StatusOK, `<!DOCTYPE html>
+<html>
+<head>
+	<title>GPU Monitor - Cluster Manager</title>
+	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+	<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+	<nav class="bg-white shadow">
+		<div class="max-w-7xl mx-auto px-4 py-4">
+			<div class="flex justify-between items-center">
+				<h1 class="text-xl font-bold text-gray-800"><a href="/">Cluster Manager</a></h1>
+				<div class="space-x-4">
+					<a href="/devices" class="text-gray-600 hover:text-gray-900">Devices</a>
+					<a href="/clusters" class="text-gray-600 hover:text-gray-900">Clusters</a>
+					<a href="/monitor" class="text-purple-600 font-semibold">GPU Monitor</a>
+				</div>
+			</div>
+		</div>
+	</nav>
+	<main class="max-w-7xl mx-auto px-4 py-8">
+		<div class="flex justify-between items-center mb-6">
+			<h2 class="text-2xl font-bold text-gray-800">GPU Monitor</h2>
+			<span class="text-sm text-gray-500">Auto-refresh every 5s</span>
+		</div>
+		<div id="gpu-status" hx-get="/htmx/gpu-monitor" hx-trigger="load, every 5s" hx-swap="innerHTML">
+			<p class="text-gray-400 animate-pulse">Loading GPU status...</p>
+		</div>
+	</main>
+</body>
+</html>`)
+}
+
+// HTMXGPUMonitor returns GPU status as HTML fragment (auto-refreshed)
+func (h *Handler) HTMXGPUMonitor(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	if h.deviceUC == nil || h.executor == nil {
+		return c.HTML(http.StatusOK, `<p class="text-red-500">Service not available</p>`)
+	}
+
+	devices, err := h.deviceUC.ListDevices(ctx, false)
+	if err != nil {
+		return c.HTML(http.StatusOK, `<p class="text-red-500">Failed to load devices</p>`)
+	}
+
+	var gpuDevices []*domain.Device
+	for _, d := range devices {
+		if d.HasGPU && d.IsOnline() {
+			gpuDevices = append(gpuDevices, d)
+		}
+	}
+
+	if len(gpuDevices) == 0 {
+		return c.HTML(http.StatusOK, `<p class="text-gray-500">No GPU devices online</p>`)
+	}
+
+	// Collect GPU metrics in parallel
+	type nodeResult struct {
+		device *domain.Device
+		gpus   []domain.GPUInfo
+		err    string
+	}
+	results := make([]nodeResult, len(gpuDevices))
+	var wg sync.WaitGroup
+
+	for i, d := range gpuDevices {
+		wg.Add(1)
+		go func(idx int, dev *domain.Device) {
+			defer wg.Done()
+			sshCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			output, err := h.executor.Execute(sshCtx, dev, "nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv,noheader,nounits")
+			r := nodeResult{device: dev}
+			if err != nil {
+				r.err = err.Error()
+			} else {
+				gpus, parseErr := domain.ParseNvidiaSmiOutput(output)
+				if parseErr != nil {
+					r.err = parseErr.Error()
+				} else {
+					r.gpus = gpus
+				}
+			}
+			results[idx] = r
+		}(i, d)
+	}
+	wg.Wait()
+
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf(`<div class="text-xs text-gray-400 mb-4">Updated: %s</div>`, time.Now().Format("15:04:05")))
+	b.WriteString(`<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">`)
+
+	for _, r := range results {
+		b.WriteString(`<div class="bg-white rounded-lg shadow p-4">`)
+		b.WriteString(fmt.Sprintf(`<div class="flex justify-between items-center mb-3">
+			<div>
+				<span class="font-bold">%s</span>
+				<span class="text-xs text-gray-400 ml-2">%s</span>
+			</div>
+			<span class="text-xs text-purple-600">%dx %s</span>
+		</div>`, esc(r.device.Hostname), esc(r.device.TailscaleIP), r.device.GPUCount, esc(r.device.GPUModel)))
+
+		if r.err != "" {
+			b.WriteString(fmt.Sprintf(`<p class="text-red-500 text-sm">%s</p>`, esc(r.err)))
+		} else {
+			for _, gpu := range r.gpus {
+				utilColor := "green"
+				if gpu.UtilizationPercent > 80 {
+					utilColor = "red"
+				} else if gpu.UtilizationPercent > 50 {
+					utilColor = "yellow"
+				}
+				memPercent := gpu.MemoryUsagePercent()
+				memColor := "green"
+				if memPercent > 80 {
+					memColor = "red"
+				} else if memPercent > 50 {
+					memColor = "yellow"
+				}
+				tempColor := "green"
+				if gpu.TemperatureC > 80 {
+					tempColor = "red"
+				} else if gpu.TemperatureC > 60 {
+					tempColor = "yellow"
+				}
+
+				b.WriteString(fmt.Sprintf(`<div class="space-y-2 mb-3">
+					<div class="flex justify-between text-sm">
+						<span>GPU Util</span>
+						<span class="font-mono text-%s-600">%.0f%%</span>
+					</div>
+					<div class="w-full bg-gray-200 rounded-full h-2">
+						<div class="bg-%s-500 h-2 rounded-full" style="width: %.0f%%"></div>
+					</div>
+					<div class="flex justify-between text-sm">
+						<span>Memory</span>
+						<span class="font-mono text-%s-600">%d / %d MB</span>
+					</div>
+					<div class="w-full bg-gray-200 rounded-full h-2">
+						<div class="bg-%s-500 h-2 rounded-full" style="width: %.0f%%"></div>
+					</div>
+					<div class="flex justify-between text-xs text-gray-500">
+						<span>Temp: <span class="text-%s-600 font-mono">%d°C</span></span>
+						<span>Power: <span class="font-mono">%.0fW / %.0fW</span></span>
+					</div>
+				</div>`,
+					utilColor, gpu.UtilizationPercent,
+					utilColor, gpu.UtilizationPercent,
+					memColor, gpu.MemoryUsedMB, gpu.MemoryTotalMB,
+					memColor, memPercent,
+					tempColor, gpu.TemperatureC,
+					gpu.PowerDrawW, gpu.PowerLimitW,
+				))
+			}
+		}
+		b.WriteString(`</div>`)
+	}
+
+	b.WriteString(`</div>`)
+	return c.HTML(http.StatusOK, b.String())
+}

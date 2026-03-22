@@ -98,7 +98,7 @@ func main() {
 	deviceUC := usecase.NewDeviceUseCase(repos, tsClient, sshCollector)
 	deviceUC.SetGPUChecker(gpuCollector)
 	clusterUC := usecase.NewClusterUseCase(repos, nil) // ray manager set later when needed
-	// monitorUC := usecase.NewMonitorUseCase(repos, sshCollector, deviceUC)
+	monitorUC := usecase.NewMonitorUseCase(repos, sshCollector, deviceUC)
 
 	// Initialize Echo
 	e := echo.New()
@@ -122,7 +122,12 @@ func main() {
 	e.Static("/static", "internal/web/static")
 
 	// Initialize handlers
-	h := handler.NewHandler(deviceUC, clusterUC, nil, nil, cfg)
+	h := handler.NewHandler(deviceUC, clusterUC, monitorUC, nil, cfg)
+
+	// Start background metrics collection (every 30 seconds)
+	monitorCtx, monitorCancel := context.WithCancel(context.Background())
+	defer monitorCancel()
+	go monitorUC.StartBackgroundCollection(monitorCtx, 30*time.Second)
 	h.SetExecutor(sshExecutor)
 
 	// Routes
@@ -136,6 +141,8 @@ func main() {
 	e.GET("/htmx/device-checkboxes", h.HTMXDeviceCheckboxes)
 	e.GET("/htmx/clusters", h.HTMXClusterList)
 	e.GET("/htmx/clusters/:id", h.HTMXClusterDetail)
+	e.GET("/monitor", h.MonitorPage)
+	e.GET("/htmx/gpu-monitor", h.HTMXGPUMonitor)
 	e.GET("/clusters", h.ClusterList)
 	e.GET("/clusters/new", h.ClusterNew)
 	e.POST("/clusters", h.ClusterCreate)
@@ -152,6 +159,8 @@ func main() {
 	api.GET("/clusters", h.APIClusterList)
 	api.GET("/clusters/:id", h.APIClusterDetail)
 	api.GET("/clusters/:id/health", h.APIClusterHealth)
+	api.GET("/monitor/gpu", h.APIGPUMonitor)
+	api.GET("/monitor/snapshot", h.APIMetricsSnapshot)
 
 	// API routes — mutating (Tailscale network auth)
 	apiWrite := api.Group("")
