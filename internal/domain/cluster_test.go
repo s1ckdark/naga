@@ -178,7 +178,7 @@ func TestCluster_ChangeHead(t *testing.T) {
 	c := NewCluster("c", "head1", []string{"w1", "w2"})
 
 	// Change to existing worker
-	if err := c.ChangeHead("w1"); err != nil {
+	if err := c.ChangeHead("w1", "manual"); err != nil {
 		t.Fatalf("ChangeHead(w1) error: %v", err)
 	}
 	if c.HeadNodeID != "w1" {
@@ -198,12 +198,12 @@ func TestCluster_ChangeHead(t *testing.T) {
 	}
 
 	// Change to same head (no-op)
-	if err := c.ChangeHead("w1"); err != nil {
+	if err := c.ChangeHead("w1", "manual"); err != nil {
 		t.Fatalf("ChangeHead(same) error: %v", err)
 	}
 
 	// Change to external node (not in workers)
-	if err := c.ChangeHead("external1"); err != nil {
+	if err := c.ChangeHead("external1", "manual"); err != nil {
 		t.Fatalf("ChangeHead(external1) error: %v", err)
 	}
 	if c.HeadNodeID != "external1" {

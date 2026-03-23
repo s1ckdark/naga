@@ -307,7 +307,7 @@ func (uc *ClusterUseCase) ChangeHead(ctx context.Context, clusterName string, ne
 	}
 
 	// Change head in configuration
-	if err := cluster.ChangeHead(newHeadID); err != nil {
+	if err := cluster.ChangeHead(newHeadID, "manual"); err != nil {
 		return err
 	}
 

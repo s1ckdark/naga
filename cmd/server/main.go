@@ -135,10 +135,24 @@ func main() {
 	taskQueue := domain.NewTaskQueue()
 	h.SetTaskQueue(taskQueue)
 
+	// Wire WebSocket disconnect handler for immediate task reassignment
+	wsHub.SetDisconnectHandler(func(deviceID string) {
+		assignedTasks := taskQueue.GetAssignedTasks(deviceID)
+		if len(assignedTasks) > 0 {
+			log.Printf("[ws] worker %s disconnected with %d tasks, triggering reassignment", deviceID, len(assignedTasks))
+			reassigned := taskQueue.ReassignTasksFromDevice(deviceID)
+			log.Printf("[ws] %d tasks reassigned from %s", len(reassigned), deviceID)
+		}
+	})
+
 	// Start background metrics collection (every 30 seconds)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
 	go monitorUC.StartBackgroundCollection(monitorCtx, 30*time.Second)
+
+	// Start task supervisor (periodic health check + timeout detection)
+	taskSupervisor := usecase.NewTaskSupervisor(taskQueue, wsHub, deviceUC)
+	go taskSupervisor.Start(monitorCtx)
 	h.SetExecutor(sshExecutor)
 
 	// Routes

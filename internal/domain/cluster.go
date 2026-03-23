@@ -25,6 +25,14 @@ const (
 	ClusterStatusError    ClusterStatus = "error"
 )
 
+// HeadTransfer records a head node change event
+type HeadTransfer struct {
+	FromDeviceID string    `json:"fromDeviceId"`
+	ToDeviceID   string    `json:"toDeviceId"`
+	Reason       string    `json:"reason"` // "manual", "failover", "election"
+	Timestamp    time.Time `json:"timestamp"`
+}
+
 // Cluster errors
 var (
 	ErrClusterNotFound     = errors.New("cluster not found")
@@ -61,6 +69,9 @@ type Cluster struct {
 	// Error tracking
 	LastError     string    `json:"lastError,omitempty"`
 	LastErrorAt   *time.Time `json:"lastErrorAt,omitempty"`
+
+	// Head transfer history
+	HeadHistory []HeadTransfer `json:"headHistory,omitempty"`
 }
 
 // NewCluster creates a new cluster with default settings
@@ -190,9 +201,10 @@ func (c *Cluster) RemoveWorker(deviceID string) error {
 	return ErrNodeNotInCluster
 }
 
-// ChangeHead changes the head node of the cluster
-// The old head becomes a worker, and the new head is removed from workers if present
-func (c *Cluster) ChangeHead(newHeadID string) error {
+// ChangeHead changes the head node of the cluster.
+// The old head becomes a worker, and the new head is removed from workers if present.
+// reason should be one of "manual", "failover", or "election".
+func (c *Cluster) ChangeHead(newHeadID string, reason string) error {
 	if newHeadID == c.HeadNodeID {
 		return nil // No change needed
 	}
@@ -212,7 +224,16 @@ func (c *Cluster) ChangeHead(newHeadID string) error {
 
 	// Set new head
 	c.HeadNodeID = newHeadID
-	c.UpdatedAt = time.Now()
+	now := time.Now()
+	c.UpdatedAt = now
+
+	// Record transfer history
+	c.HeadHistory = append(c.HeadHistory, HeadTransfer{
+		FromDeviceID: oldHeadID,
+		ToDeviceID:   newHeadID,
+		Reason:       reason,
+		Timestamp:    now,
+	})
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -170,4 +171,77 @@ func (q *TaskQueue) PendingCount() int {
 		}
 	}
 	return count
+}
+
+// ReassignTasksFromDevice moves all non-terminal tasks from a failed device back to the queue
+func (q *TaskQueue) ReassignTasksFromDevice(deviceID string) []*Task {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var reassigned []*Task
+	for _, task := range q.tasks {
+		if task.AssignedDeviceID == deviceID && !task.IsTerminal() {
+			task.RetryCount++
+			if task.RetryCount > task.MaxRetries {
+				now := time.Now()
+				task.Status = TaskStatusFailed
+				task.CompletedAt = &now
+				task.Error = fmt.Sprintf("worker %s failed, max retries exceeded", deviceID)
+			} else {
+				task.Status = TaskStatusQueued
+				task.AssignedDeviceID = ""
+				task.AssignedAt = nil
+				task.StartedAt = nil
+				task.Error = fmt.Sprintf("worker %s failed, reassigning (retry %d/%d)", deviceID, task.RetryCount, task.MaxRetries)
+				q.insertByPriority(task)
+				reassigned = append(reassigned, task)
+			}
+		}
+	}
+	return reassigned
+}
+
+// GetAssignedTasks returns all tasks currently assigned to a device
+func (q *TaskQueue) GetAssignedTasks(deviceID string) []*Task {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	var tasks []*Task
+	for _, t := range q.tasks {
+		if t.AssignedDeviceID == deviceID && (t.Status == TaskStatusAssigned || t.Status == TaskStatusRunning) {
+			tasks = append(tasks, t)
+		}
+	}
+	return tasks
+}
+
+// CheckTimeouts moves timed-out tasks back to queued status
+func (q *TaskQueue) CheckTimeouts() []*Task {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var timedOut []*Task
+	now := time.Now()
+
+	for _, task := range q.tasks {
+		if task.Status == TaskStatusRunning && task.Timeout > 0 && task.StartedAt != nil {
+			if now.Sub(*task.StartedAt) > task.Timeout {
+				task.RetryCount++
+				if task.RetryCount > task.MaxRetries {
+					task.Status = TaskStatusFailed
+					task.CompletedAt = &now
+					task.Error = "task timed out, max retries exceeded"
+				} else {
+					task.Status = TaskStatusQueued
+					task.AssignedDeviceID = ""
+					task.AssignedAt = nil
+					task.StartedAt = nil
+					task.Error = fmt.Sprintf("task timed out (retry %d/%d)", task.RetryCount, task.MaxRetries)
+					q.insertByPriority(task)
+					timedOut = append(timedOut, task)
+				}
+			}
+		}
+	}
+	return timedOut
 }

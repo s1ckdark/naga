@@ -67,7 +67,7 @@ func (uc *FailoverUseCase) ExecuteFailover(
 	}
 
 	// Step 3: Update cluster config
-	if err := cluster.ChangeHead(newHeadID); err != nil {
+	if err := cluster.ChangeHead(newHeadID, "failover"); err != nil {
 		return fmt.Errorf("failed to change head to %s: %w", newHeadID, err)
 	}
 	cluster.Status = domain.ClusterStatusStarting
@@ -105,5 +105,89 @@ func (uc *FailoverUseCase) ExecuteFailover(
 	cluster.DashboardURL = fmt.Sprintf("http://%s:%d", newHeadDevice.TailscaleIP, cluster.DashboardPort)
 	cluster.UpdatedAt = time.Now()
 
+	return nil
+}
+
+// TransferHead performs a graceful head transfer to a new node without requiring a failure.
+// Unlike ExecuteFailover, this assumes the current head is healthy and can coordinate the transfer.
+// The cluster and devices maps are passed in by the caller (who has repo access).
+func (uc *FailoverUseCase) TransferHead(
+	ctx context.Context,
+	cluster *domain.Cluster,
+	newHeadID string,
+	devices map[string]*domain.Device,
+	checkpointDir string,
+) error {
+	if cluster.HeadNodeID == newHeadID {
+		return fmt.Errorf("device %s is already the head node", newHeadID)
+	}
+
+	newHeadDevice := devices[newHeadID]
+	if newHeadDevice == nil {
+		return fmt.Errorf("new head device %s not found", newHeadID)
+	}
+
+	oldHeadID := cluster.HeadNodeID
+	oldHeadDevice := devices[oldHeadID]
+
+	// Step 1: Save checkpoint from current head (graceful, so should succeed)
+	if oldHeadDevice != nil && oldHeadDevice.IsOnline() && checkpointDir != "" {
+		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := uc.rayManager.SaveCheckpoint(saveCtx, oldHeadDevice, checkpointDir); err != nil {
+			log.Printf("Warning: checkpoint save failed during transfer: %v", err)
+			// Continue anyway — this is a graceful transfer, not a failure
+		}
+	}
+
+	// Step 2: Stop current head gracefully
+	if oldHeadDevice != nil && oldHeadDevice.IsOnline() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := uc.rayManager.StopRay(stopCtx, oldHeadDevice); err != nil {
+			log.Printf("Warning: failed to stop old head %s: %v", oldHeadID, err)
+		}
+	}
+
+	// Step 3: Update cluster config (old head becomes a worker)
+	if err := cluster.ChangeHead(newHeadID, "manual"); err != nil {
+		return fmt.Errorf("failed to change head to %s: %w", newHeadID, err)
+	}
+	cluster.Status = domain.ClusterStatusStarting
+	now := time.Now()
+	cluster.StartedAt = &now
+
+	// Step 4: Start new head
+	if err := uc.rayManager.StartHead(ctx, newHeadDevice, cluster.RayPort, cluster.DashboardPort); err != nil {
+		cluster.SetError(fmt.Sprintf("transfer: failed to start new head: %v", err))
+		return fmt.Errorf("failed to start new head on %s: %w", newHeadID, err)
+	}
+
+	// Step 5: Reconnect workers (including the old head, now a worker)
+	headAddress := fmt.Sprintf("%s:%d", newHeadDevice.TailscaleIP, cluster.RayPort)
+	for _, workerID := range cluster.WorkerIDs {
+		workerDevice := devices[workerID]
+		if workerDevice == nil || !workerDevice.CanSSH() {
+			continue
+		}
+		if err := uc.rayManager.StartWorker(ctx, workerDevice, headAddress); err != nil {
+			log.Printf("Warning: failed to reconnect worker %s: %v", workerID, err)
+		}
+	}
+
+	// Step 6: Restore checkpoint on new head
+	if checkpointDir != "" {
+		restoreCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := uc.rayManager.RestoreCheckpoint(restoreCtx, newHeadDevice, checkpointDir); err != nil {
+			log.Printf("Warning: checkpoint restore failed: %v", err)
+		}
+	}
+
+	cluster.Status = domain.ClusterStatusRunning
+	cluster.DashboardURL = fmt.Sprintf("http://%s:%d", newHeadDevice.TailscaleIP, cluster.DashboardPort)
+	cluster.UpdatedAt = time.Now()
+
+	log.Printf("head transfer complete: cluster %s, %s -> %s", cluster.ID, oldHeadID, newHeadID)
 	return nil
 }

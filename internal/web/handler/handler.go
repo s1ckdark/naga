@@ -1072,7 +1072,9 @@ func (h *Handler) APIClusterRemoveWorker(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "worker_removed", "cluster_id": id, "device_id": deviceID})
 }
 
-// APIClusterChangeHead changes the head node of a cluster
+// APIClusterChangeHead changes the head node of a cluster.
+// For running Ray clusters, performs a graceful head transfer via failoverUC.TransferHead.
+// For basic-mode or stopped clusters, delegates to clusterUC.ChangeHead.
 func (h *Handler) APIClusterChangeHead(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
@@ -1084,6 +1086,10 @@ func (h *Handler) APIClusterChangeHead(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
+	if req.NewHeadID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "new_head_id is required"})
+	}
+
 	if h.clusterUC == nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "cluster service not available"})
 	}
@@ -1093,8 +1099,19 @@ func (h *Handler) APIClusterChangeHead(c echo.Context) error {
 		return internalError(c, "failed to get devices", err)
 	}
 
-	err = h.clusterUC.ChangeHead(ctx, id, req.NewHeadID, devices)
-	if err != nil {
+	// Use graceful TransferHead for running Ray clusters when failoverUC is available
+	if h.failoverUC != nil {
+		cluster, err := h.clusterUC.GetCluster(ctx, id)
+		if err == nil && cluster.IsRunning() && cluster.IsRayMode() {
+			if err := h.failoverUC.TransferHead(ctx, cluster, req.NewHeadID, devices, ""); err != nil {
+				return internalError(c, "failed to transfer head node", err)
+			}
+			return c.JSON(http.StatusOK, map[string]string{"status": "head_transferred", "cluster_id": id, "new_head_id": req.NewHeadID})
+		}
+	}
+
+	// Fallback: stop/reconfigure/restart via clusterUC (basic mode or stopped clusters)
+	if err := h.clusterUC.ChangeHead(ctx, id, req.NewHeadID, devices); err != nil {
 		return internalError(c, "failed to change head node", err)
 	}
 

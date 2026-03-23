@@ -50,12 +50,13 @@ type Client struct {
 
 // Hub manages WebSocket connections
 type Hub struct {
-	clients    map[string]*Client // deviceID -> client
-	register   chan *Client
-	unregister chan *Client
-	broadcast  chan []byte
-	mu         sync.RWMutex
-	onMessage  func(client *Client, msg *Message) // callback for message handling
+	clients      map[string]*Client // deviceID -> client
+	register     chan *Client
+	unregister   chan *Client
+	broadcast    chan []byte
+	mu           sync.RWMutex
+	onMessage    func(client *Client, msg *Message) // callback for message handling
+	onDisconnect func(deviceID string)              // callback when a client disconnects
 }
 
 // NewHub creates a new WebSocket hub
@@ -71,6 +72,11 @@ func NewHub() *Hub {
 // SetMessageHandler sets the callback for incoming messages
 func (h *Hub) SetMessageHandler(handler func(client *Client, msg *Message)) {
 	h.onMessage = handler
+}
+
+// SetDisconnectHandler sets the callback invoked when a client disconnects
+func (h *Hub) SetDisconnectHandler(handler func(deviceID string)) {
+	h.onDisconnect = handler
 }
 
 // Register registers a client with the hub
@@ -98,6 +104,9 @@ func (h *Hub) Run() {
 			if c, ok := h.clients[client.DeviceID]; ok && c == client {
 				delete(h.clients, client.DeviceID)
 				close(client.Send)
+				if h.onDisconnect != nil {
+					go h.onDisconnect(client.DeviceID)
+				}
 			}
 			h.mu.Unlock()
 			log.Printf("[ws] client disconnected: %s", client.DeviceID)
