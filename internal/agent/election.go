@@ -9,15 +9,15 @@ import (
 	"github.com/dave/naga/internal/domain"
 )
 
-type AISelector interface {
+type HeadSelector interface {
 	SelectHead(ctx context.Context, candidates []domain.ElectionCandidate) (nodeID string, reason string, err error)
 }
 
 type Election struct {
-	ai AISelector
+	ai HeadSelector
 }
 
-func NewElection(ai AISelector) *Election {
+func NewElection(ai HeadSelector) *Election {
 	return &Election{ai: ai}
 }
 

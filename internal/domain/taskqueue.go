@@ -201,6 +201,56 @@ func (q *TaskQueue) ReassignTasksFromDevice(deviceID string) []*Task {
 	return reassigned
 }
 
+// WorkerCandidate wraps a Device with current resource metrics for AI scheduling.
+type WorkerCandidate struct {
+	Device         *Device
+	GPUUtilization float64
+	MemoryFreeGB   float64
+	CPUUsage       float64
+	RunningJobs    int
+}
+
+// ScheduleFunc is called by FindMatchingTaskWithAI to pick the best worker for a task.
+// It returns the device ID that should run the task, or an error.
+type ScheduleFunc func(task *Task, workers []WorkerCandidate) (deviceID string, err error)
+
+// FindMatchingTaskWithAI finds a task for the given device using an optional AI scheduler.
+// It filters by capability first; if schedule is non-nil it calls it to confirm placement.
+// Falls back to FindMatchingTask behaviour if schedule is nil or returns a different device.
+func (q *TaskQueue) FindMatchingTaskWithAI(device *Device, candidates []WorkerCandidate, schedule ScheduleFunc) *Task {
+	if schedule == nil {
+		return q.FindMatchingTask(device)
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	for i, task := range q.queue {
+		if task.Status != TaskStatusQueued {
+			continue
+		}
+		if task.PreferredDeviceID != "" && task.PreferredDeviceID != device.ID {
+			continue
+		}
+		if !q.deviceMatchesTask(device, task) {
+			continue
+		}
+		// Ask AI which worker should run this task.
+		chosen, err := schedule(task, candidates)
+		if err != nil || chosen != device.ID {
+			continue
+		}
+		// Remove from queue and assign.
+		q.queue = append(q.queue[:i], q.queue[i+1:]...)
+		now := time.Now()
+		task.Status = TaskStatusAssigned
+		task.AssignedDeviceID = device.ID
+		task.AssignedAt = &now
+		return task
+	}
+	return nil
+}
+
 // GetAssignedTasks returns all tasks currently assigned to a device
 func (q *TaskQueue) GetAssignedTasks(deviceID string) []*Task {
 	q.mu.RLock()

@@ -42,13 +42,13 @@ type AgentConfig struct {
 	AuthToken         string
 	HeartbeatInterval time.Duration
 	FailureTimeout    time.Duration
-	AISelector        AISelector
+	HeadSelector      HeadSelector
 }
 
 // NewAgent creates a new Agent with the given configuration.
 func NewAgent(cfg AgentConfig) *Agent {
 	monitor := NewHeartbeatMonitor(cfg.FailureTimeout, cfg.HeartbeatInterval)
-	election := NewElection(cfg.AISelector)
+	election := NewElection(cfg.HeadSelector)
 
 	a := &Agent{
 		nodeID:            cfg.NodeID,

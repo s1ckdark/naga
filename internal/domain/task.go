@@ -23,6 +23,14 @@ const (
 	TaskPriorityUrgent TaskPriority = "urgent"
 )
 
+// ResourceRequirements specifies the hardware resources needed to run a task.
+type ResourceRequirements struct {
+	GPUMemoryMB    int     `json:"gpuMemoryMB,omitempty"`
+	CPUCores       int     `json:"cpuCores,omitempty"`
+	MemoryMB       int     `json:"memoryMB,omitempty"`
+	GPUUtilization float64 `json:"gpuUtilization,omitempty"`
+}
+
 // Task represents a unit of work to be executed on a capable node
 type Task struct {
 	ID                   string                 `json:"id"`
@@ -45,6 +53,7 @@ type Task struct {
 	RetryCount           int                    `json:"retryCount"`
 	MaxRetries           int                    `json:"maxRetries"`
 	CreatedBy            string                 `json:"createdBy,omitempty"`       // device ID of creator/head
+	ResourceReqs         *ResourceRequirements  `json:"resourceReqs,omitempty"`
 }
 
 // TaskResult holds the output of a completed task

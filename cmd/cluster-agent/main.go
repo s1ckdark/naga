@@ -12,7 +12,7 @@ import (
 
 	"github.com/dave/naga/internal/agent"
 	"github.com/dave/naga/internal/domain"
-	"github.com/dave/naga/internal/infra/ai"
+	"github.com/dave/naga/internal/infra/ai/claude"
 )
 
 func main() {
@@ -60,7 +60,7 @@ func main() {
 		ListenAddr:        fmt.Sprintf(":%d", *port),
 		HeartbeatInterval: *heartbeat,
 		FailureTimeout:    *timeout,
-		AISelector:        resolveAISelector(*anthropicKey),
+		HeadSelector:      resolveHeadSelector(*anthropicKey),
 	}
 
 	a := agent.NewAgent(cfg)
@@ -82,9 +82,9 @@ func main() {
 	}
 }
 
-func resolveAISelector(apiKey string) agent.AISelector {
+func resolveHeadSelector(apiKey string) agent.HeadSelector {
 	if apiKey == "" {
 		return nil
 	}
-	return ai.NewClaudeSelector(apiKey)
+	return claude.NewProvider(apiKey, "")
 }
