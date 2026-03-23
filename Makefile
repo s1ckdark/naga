@@ -1,8 +1,8 @@
-# clusterctl Makefile
+# naga Makefile
 
 # Variables
-BINARY_NAME=clusterctl
-SERVER_BINARY=clusterctl-server
+BINARY_NAME=naga
+SERVER_BINARY=naga-server
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 LDFLAGS=-ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
@@ -97,8 +97,8 @@ clean: ## Remove build artifacts
 
 db-init: ## Initialize database with migrations
 	@echo "Initializing database..."
-	@mkdir -p ~/.clusterctl
-	sqlite3 ~/.clusterctl/clusterctl.db < migrations/001_init.sql
+	@mkdir -p ~/.naga
+	sqlite3 ~/.naga/naga.db < migrations/001_init.sql
 
 ## Tailscale Serve
 
@@ -109,13 +109,13 @@ serve: build-server ## Run server with Tailscale Serve (Tailnet-only access)
 
 docker-build: ## Build Docker image
 	@echo "Building Docker image..."
-	docker build -t clusterctl:$(VERSION) .
+	docker build -t naga:$(VERSION) .
 
 docker-run: ## Run Docker container
 	docker run -it --rm \
-		-v ~/.clusterctl:/root/.clusterctl \
+		-v ~/.naga:/root/.naga \
 		-p 8080:8080 \
-		clusterctl:$(VERSION)
+		naga:$(VERSION)
 
 ## Help
 

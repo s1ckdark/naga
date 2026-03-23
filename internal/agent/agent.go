@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // Agent runs on each cluster node as a systemd service.

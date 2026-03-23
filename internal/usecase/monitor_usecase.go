@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/repository"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/repository"
 )
 
 // MonitorUseCase handles monitoring-related business logic

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // Executor executes commands on remote machines via SSH

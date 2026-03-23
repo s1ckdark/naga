@@ -13,10 +13,10 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"github.com/dave/clusterctl/config"
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/usecase"
-	"github.com/dave/clusterctl/internal/web/ws"
+	"github.com/dave/naga/config"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/usecase"
+	"github.com/dave/naga/internal/web/ws"
 )
 
 // RemoteExecutor executes commands on remote devices
@@ -94,7 +94,7 @@ func (h *Handler) Dashboard(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Cluster Manager</title>
+	<title>Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -102,7 +102,7 @@ func (h *Handler) Dashboard(c echo.Context) error {
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
 			<div class="flex justify-between items-center">
-				<h1 class="text-xl font-bold text-gray-800">Cluster Manager</h1>
+				<h1 class="text-xl font-bold text-gray-800">Naga</h1>
 				<div class="space-x-4">
 					<a href="/devices" class="text-gray-600 hover:text-gray-900">Devices</a>
 					<a href="/clusters" class="text-gray-600 hover:text-gray-900">Clusters</a>
@@ -153,7 +153,7 @@ func (h *Handler) DeviceList(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Devices - Cluster Manager</title>
+	<title>Devices - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -161,7 +161,7 @@ func (h *Handler) DeviceList(c echo.Context) error {
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
 			<div class="flex justify-between items-center">
-				<h1 class="text-xl font-bold text-gray-800"><a href="/">Cluster Manager</a></h1>
+				<h1 class="text-xl font-bold text-gray-800"><a href="/">Naga</a></h1>
 				<div class="space-x-4">
 					<a href="/devices" class="text-blue-600 font-semibold">Devices</a>
 					<a href="/clusters" class="text-gray-600 hover:text-gray-900">Clusters</a>
@@ -191,14 +191,14 @@ func (h *Handler) DeviceDetail(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Device Details - Cluster Manager</title>
+	<title>Device Details - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
-			<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
+			<a href="/" class="text-xl font-bold text-gray-800">Naga</a>
 		</div>
 	</nav>
 		<main class="max-w-7xl mx-auto px-4 py-8">
@@ -215,7 +215,7 @@ func (h *Handler) ClusterList(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Clusters - Cluster Manager</title>
+	<title>Clusters - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -223,7 +223,7 @@ func (h *Handler) ClusterList(c echo.Context) error {
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
 			<div class="flex justify-between items-center">
-				<h1 class="text-xl font-bold text-gray-800"><a href="/">Cluster Manager</a></h1>
+				<h1 class="text-xl font-bold text-gray-800"><a href="/">Naga</a></h1>
 				<div class="space-x-4">
 					<a href="/devices" class="text-gray-600 hover:text-gray-900">Devices</a>
 					<a href="/clusters" class="text-blue-600 font-semibold">Clusters</a>
@@ -251,14 +251,14 @@ func (h *Handler) ClusterNew(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Create Cluster - Cluster Manager</title>
+	<title>Create Cluster - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
-			<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
+			<a href="/" class="text-xl font-bold text-gray-800">Naga</a>
 		</div>
 	</nav>
 	<main class="max-w-7xl mx-auto px-4 py-8">
@@ -363,14 +363,14 @@ func (h *Handler) ClusterDetail(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Cluster Details - Cluster Manager</title>
+	<title>Cluster Details - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
-			<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
+			<a href="/" class="text-xl font-bold text-gray-800">Naga</a>
 		</div>
 	</nav>
 		<main class="max-w-7xl mx-auto px-4 py-8">
@@ -1205,7 +1205,7 @@ func (h *Handler) ClusterExecutePage(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>Execute Task - Cluster Manager</title>
+	<title>Execute Task - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -1213,7 +1213,7 @@ func (h *Handler) ClusterExecutePage(c echo.Context) error {
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
 			<div class="flex justify-between items-center">
-				<a href="/" class="text-xl font-bold text-gray-800">Cluster Manager</a>
+				<a href="/" class="text-xl font-bold text-gray-800">Naga</a>
 				<div class="space-x-4">
 					<a href="/clusters" class="text-gray-600 hover:text-gray-900">Clusters</a>
 					<a href="/clusters/`+id+`" class="text-gray-600 hover:text-gray-900">Cluster Detail</a>
@@ -1664,7 +1664,7 @@ func (h *Handler) MonitorPage(c echo.Context) error {
 	return c.HTML(http.StatusOK, `<!DOCTYPE html>
 <html>
 <head>
-	<title>GPU Monitor - Cluster Manager</title>
+	<title>GPU Monitor - Naga</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
 	<script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -1672,7 +1672,7 @@ func (h *Handler) MonitorPage(c echo.Context) error {
 	<nav class="bg-white shadow">
 		<div class="max-w-7xl mx-auto px-4 py-4">
 			<div class="flex justify-between items-center">
-				<h1 class="text-xl font-bold text-gray-800"><a href="/">Cluster Manager</a></h1>
+				<h1 class="text-xl font-bold text-gray-800"><a href="/">Naga</a></h1>
 				<div class="space-x-4">
 					<a href="/devices" class="text-gray-600 hover:text-gray-900">Devices</a>
 					<a href="/clusters" class="text-gray-600 hover:text-gray-900">Clusters</a>

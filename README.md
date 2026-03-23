@@ -1,4 +1,4 @@
-# Cluster Manager - Tailscale 기반 GPU 클러스터 관리 도구
+# Naga - Tailscale 기반 GPU 클러스터 관리 도구
 
 Tailscale 네트워크 내의 GPU 노드를 자동으로 감지하고 관리하며, Ray 클러스터를 구성하여 분산 작업을 실행하는 종합 관리 솔루션입니다.
 
@@ -66,9 +66,9 @@ clusterManager/
 ├── cmd/                          # 실행 가능한 바이너리
 │   ├── server/                   # Web/API 서버 (Echo)
 │   │   └── main.go              # 엔드포인트 및 인증 설정
-│   ├── cluster-agent/            # GPU 노드 에이전트
+│   ├── naga-agent/            # GPU 노드 에이전트
 │   │   └── main.go              # Heartbeat, 페일오버, 헬스체크
-│   └── clusterctl/               # CLI 도구
+│   └── naga/               # CLI 도구
 │       └── main.go              # Command-line interface
 │
 ├── internal/                      # 애플리케이션 코어
@@ -195,7 +195,7 @@ clusterManager/
    ```bash
    make build          # CLI + 서버 모두
    # 또는 개별 빌드
-   make build-cli      # clusterctl CLI
+   make build-cli      # naga CLI
    make build-server   # Web 서버
    ```
 
@@ -291,26 +291,26 @@ xcodebuild -scheme ClusterManager -configuration Release
 - `POST /api/clusters/:id/execute` - 모든 Worker에서 명령 실행
 - `POST /api/devices/:id/execute` - 특정 Device에서 명령 실행
 
-### CLI 도구 (clusterctl)
+### CLI 도구 (naga)
 
 ```bash
 # Device 관리
-./clusterctl device list              # 모든 Device 출력
-./clusterctl device detail <id>       # Device 상세
-./clusterctl device gpu-status        # GPU 메트릭 조회
+./naga device list              # 모든 Device 출력
+./naga device detail <id>       # Device 상세
+./naga device gpu-status        # GPU 메트릭 조회
 
 # Cluster 관리
-./clusterctl cluster list             # 모든 Cluster 출력
-./clusterctl cluster create <name> <head-id> [workers...]
-./clusterctl cluster delete <id>
-./clusterctl cluster health <id>
+./naga cluster list             # 모든 Cluster 출력
+./naga cluster create <name> <head-id> [workers...]
+./naga cluster delete <id>
+./naga cluster health <id>
 
 # Task 실행
-./clusterctl execute device <id> <command>
-./clusterctl execute cluster <id> <command>
+./naga execute device <id> <command>
+./naga execute cluster <id> <command>
 
 # 모니터링
-./clusterctl monitor                  # 실시간 TUI 대시보드
+./naga monitor                  # 실시간 TUI 대시보드
 ```
 
 ## MCP 도구 목록
@@ -383,7 +383,7 @@ export CLUSTER_SSH_TIMEOUT=30
 export CLUSTER_SSH_USE_TAILSCALE_SSH=true  # Tailscale SSH 사용
 
 # 데이터베이스
-export CLUSTER_DATABASE_DSN=$HOME/.clusterctl/clusterctl.db
+export CLUSTER_DATABASE_DSN=$HOME/.naga/naga.db
 
 # MCP (TypeScript)
 export CLUSTER_API_URL=http://localhost:8080
@@ -408,7 +408,7 @@ make check             # fmt + vet + lint + test 전부
 ### 빌드 정보
 - **버전**: Git 태그 또는 "dev"
 - **빌드 시간**: 빌드 타임스탐프 자동 삽입 (LDFLAGS)
-- 바이너리 위치: `./build/clusterctl`, `./build/clusterctl-server`
+- 바이너리 위치: `./build/naga`, `./build/naga-server`
 
 ## 보안
 

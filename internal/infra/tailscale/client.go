@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // Client is a Tailscale API client

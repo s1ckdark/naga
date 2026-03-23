@@ -55,7 +55,7 @@ server.resource(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("GPU Cluster MCP server running on stdio");
+  console.error("Naga MCP server running on stdio");
 }
 
 main().catch((err) => {

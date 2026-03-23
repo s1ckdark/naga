@@ -8,13 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/dave/clusterctl/internal/agent"
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ssh"
-	"github.com/dave/clusterctl/internal/infra/tailscale"
-	"github.com/dave/clusterctl/internal/repository/sqlite"
-	"github.com/dave/clusterctl/internal/tui/monitor"
-	"github.com/dave/clusterctl/internal/usecase"
+	"github.com/dave/naga/internal/agent"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ssh"
+	"github.com/dave/naga/internal/infra/tailscale"
+	"github.com/dave/naga/internal/repository/sqlite"
+	"github.com/dave/naga/internal/tui/monitor"
+	"github.com/dave/naga/internal/usecase"
 )
 
 func newClusterCmd() *cobra.Command {

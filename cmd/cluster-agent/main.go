@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dave/clusterctl/internal/agent"
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ai"
+	"github.com/dave/naga/internal/agent"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ai"
 )
 
 func main() {

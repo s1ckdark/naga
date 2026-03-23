@@ -66,7 +66,7 @@ struct iOSDashboardView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Cluster Manager")
+            .navigationTitle("Naga")
             .task {
                 await viewModel.loadDashboard()
             }

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 func TestHeartbeatMonitor_DetectFailure(t *testing.T) {

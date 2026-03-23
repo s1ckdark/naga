@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dave/clusterctl/internal/cli"
+	"github.com/dave/naga/internal/cli"
 )
 
 var (

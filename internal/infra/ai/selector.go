@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 type ClaudeSelector struct {

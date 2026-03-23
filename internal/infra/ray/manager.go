@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ssh"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ssh"
 )
 
 // Manager manages Ray cluster operations

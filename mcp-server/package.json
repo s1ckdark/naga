@@ -1,7 +1,7 @@
 {
-  "name": "@clusterctl/mcp-server",
+  "name": "@naga/mcp-server",
   "version": "0.1.0",
-  "description": "MCP server for GPU cluster management",
+  "description": "Naga MCP server for GPU cluster management",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {

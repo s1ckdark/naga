@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 type mockFailoverRayManager struct {

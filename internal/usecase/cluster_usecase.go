@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/repository"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/repository"
 )
 
 // ClusterUseCase handles cluster-related business logic

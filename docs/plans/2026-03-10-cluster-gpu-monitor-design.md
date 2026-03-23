@@ -6,7 +6,7 @@ Shows real-time GPU metrics for all nodes in a cluster via SSH + nvidia-smi.
 
 ## Command
 ```
-clusterctl cluster monitor <cluster-name> [--interval 3]
+naga cluster monitor <cluster-name> [--interval 3]
 ```
 
 ## Data Collection

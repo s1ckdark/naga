@@ -4,7 +4,7 @@
 
 **Goal:** Add automatic head node failover with AI-driven selection, dual-layer failure detection, checkpoint-based recovery, and systemd-managed node agents.
 
-**Architecture:** Each node runs a lightweight agent (systemd service) that handles heartbeat, metrics collection, and participates in head election. The clusterctl server monitors all nodes (primary detection). If the server is also down, workers self-detect and elect a new head using rule-based fallback. When available, Claude API analyzes node metrics to pick the optimal new head.
+**Architecture:** Each node runs a lightweight agent (systemd service) that handles heartbeat, metrics collection, and participates in head election. The naga server monitors all nodes (primary detection). If the server is also down, workers self-detect and elect a new head using rule-based fallback. When available, Claude API analyzes node metrics to pick the optimal new head.
 
 **Tech Stack:** Go (agent binary), systemd (process management), Claude API (AI selection), existing SSH executor, Ray checkpoint API
 
@@ -232,7 +232,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 func TestHeartbeatMonitor_DetectFailure(t *testing.T) {
@@ -290,7 +290,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // HeartbeatMonitor tracks heartbeats from cluster nodes
@@ -414,7 +414,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 type mockAISelector struct {
@@ -498,7 +498,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // AISelector is the interface for AI-based head selection
@@ -576,7 +576,7 @@ import (
 	"net/http"
 	"bytes"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // ClaudeSelector uses Claude API to select the best head node
@@ -709,7 +709,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 type mockRayManagerForFailover struct {
@@ -819,7 +819,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // FailoverRayManager extends RayManager with checkpoint operations
@@ -939,7 +939,7 @@ git commit -m "feat: add failover usecase with checkpoint save/restore"
 
 **Files:**
 - Create: `internal/agent/agent.go`
-- Create: `cmd/cluster-agent/main.go`
+- Create: `cmd/naga-agent/main.go`
 
 **Step 1: Write the agent**
 
@@ -956,7 +956,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // Agent is the node agent that runs on each cluster node
@@ -1182,7 +1182,7 @@ func (a *Agent) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 **Step 2: Write agent binary entrypoint**
 
-`cmd/cluster-agent/main.go`:
+`cmd/naga-agent/main.go`:
 ```go
 package main
 
@@ -1196,9 +1196,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dave/clusterctl/internal/agent"
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ai"
+	"github.com/dave/naga/internal/agent"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ai"
 )
 
 func main() {
@@ -1212,7 +1212,7 @@ func main() {
 	flag.Parse()
 
 	if *nodeID == "" || *clusterID == "" {
-		fmt.Fprintf(os.Stderr, "Usage: cluster-agent --node-id=ID --cluster-id=ID [--role=worker] [--port=9090]\n")
+		fmt.Fprintf(os.Stderr, "Usage: naga-agent --node-id=ID --cluster-id=ID [--role=worker] [--port=9090]\n")
 		os.Exit(1)
 	}
 
@@ -1260,13 +1260,13 @@ func main() {
 
 **Step 3: Verify build**
 
-Run: `go build ./cmd/cluster-agent/ && go build ./internal/agent/`
+Run: `go build ./cmd/naga-agent/ && go build ./internal/agent/`
 Expected: success
 
 **Step 4: Commit**
 
 ```bash
-git add internal/agent/agent.go cmd/cluster-agent/main.go
+git add internal/agent/agent.go cmd/naga-agent/main.go
 git commit -m "feat: add node agent with heartbeat, failure detection, and HTTP endpoints"
 ```
 
@@ -1294,7 +1294,7 @@ func TestGenerateSystemdUnit(t *testing.T) {
 		ClusterID: "my-cluster",
 		Role:      "worker",
 		Port:      9090,
-		BinaryPath: "/usr/local/bin/cluster-agent",
+		BinaryPath: "/usr/local/bin/naga-agent",
 	}
 
 	unit := GenerateSystemdUnit(cfg)
@@ -1302,7 +1302,7 @@ func TestGenerateSystemdUnit(t *testing.T) {
 	if !strings.Contains(unit, "[Unit]") {
 		t.Error("expected [Unit] section")
 	}
-	if !strings.Contains(unit, "ExecStart=/usr/local/bin/cluster-agent") {
+	if !strings.Contains(unit, "ExecStart=/usr/local/bin/naga-agent") {
 		t.Error("expected ExecStart with binary path")
 	}
 	if !strings.Contains(unit, "--node-id=worker-1") {
@@ -1322,7 +1322,7 @@ func TestInstallCommand(t *testing.T) {
 		ClusterID: "my-cluster",
 		Role:      "worker",
 		Port:      9090,
-		BinaryPath: "/usr/local/bin/cluster-agent",
+		BinaryPath: "/usr/local/bin/naga-agent",
 	}
 
 	cmds := InstallCommands(cfg)
@@ -1378,7 +1378,7 @@ Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cluster-agent
+SyslogIdentifier=naga-agent
 
 [Install]
 WantedBy=multi-user.target
@@ -1387,7 +1387,7 @@ WantedBy=multi-user.target
 
 // ServiceName returns the systemd service name
 func ServiceName(clusterID, nodeID string) string {
-	return fmt.Sprintf("cluster-agent-%s-%s", clusterID, nodeID)
+	return fmt.Sprintf("naga-agent-%s-%s", clusterID, nodeID)
 }
 
 // UnitFilePath returns the path for the systemd unit file
@@ -1465,13 +1465,13 @@ func newClusterAgentCmd() *cobra.Command {
 
 `newAgentInstallCmd`: SSH into each cluster node, copy binary, write systemd unit, enable + start.
 `newAgentUninstallCmd`: SSH into each node, stop + disable + remove service.
-`newAgentStatusCmd`: SSH into each node, check `systemctl status cluster-agent-*`.
+`newAgentStatusCmd`: SSH into each node, check `systemctl status naga-agent-*`.
 
 These use the existing `ssh.Executor` to run commands remotely.
 
 **Step 2: Verify build**
 
-Run: `go build ./cmd/clusterctl/`
+Run: `go build ./cmd/naga/`
 Expected: success
 
 **Step 3: Commit**
@@ -1504,7 +1504,7 @@ In `cmd/server/main.go`, start a goroutine that:
 
 **Step 3: Verify**
 
-Run: `go build ./cmd/server/ && go build ./cmd/clusterctl/ && go test ./... -v`
+Run: `go build ./cmd/server/ && go build ./cmd/naga/ && go test ./... -v`
 Expected: all pass
 
 **Step 4: Commit**
@@ -1525,17 +1525,17 @@ Expected: all pass
 
 **Step 2: Build all binaries**
 
-Run: `go build ./cmd/clusterctl/ && go build ./cmd/cluster-agent/ && go build ./cmd/server/`
+Run: `go build ./cmd/naga/ && go build ./cmd/naga-agent/ && go build ./cmd/server/`
 Expected: all succeed
 
 **Step 3: Smoke test agent help**
 
-Run: `./cluster-agent --help`
+Run: `./naga-agent --help`
 Expected: shows flags for node-id, cluster-id, role, port, etc.
 
 **Step 4: Smoke test CLI**
 
-Run: `./clusterctl cluster agent --help`
+Run: `./naga cluster agent --help`
 Expected: shows install, uninstall, status subcommands
 
 **Step 5: Final commit**

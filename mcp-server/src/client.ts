@@ -2,7 +2,7 @@
  * HTTP client for the Go cluster manager API (localhost:8080)
  */
 
-const BASE_URL = process.env.CLUSTER_API_URL || "http://localhost:8080";
+const BASE_URL = process.env.NAGA_API_URL || "http://localhost:8080";
 
 interface RequestOptions {
   method?: string;

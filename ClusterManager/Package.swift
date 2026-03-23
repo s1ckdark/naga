@@ -2,17 +2,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClusterManager",
+    name: "Naga",
     platforms: [
         .macOS(.v14),
         .iOS(.v17)
     ],
     products: [
-        .executable(name: "ClusterManager", targets: ["ClusterManager"]),
+        .executable(name: "Naga", targets: ["Naga"]),
     ],
     targets: [
         .executableTarget(
-            name: "ClusterManager",
+            name: "Naga",
             path: "ClusterManager"
         ),
     ]

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // newTestDB creates an in-memory SQLite DB for testing

@@ -5,7 +5,7 @@
 set -e
 
 PORT=${PORT:-8080}
-BINARY="./build/clusterctl-server"
+BINARY="./build/naga-server"
 
 # 빌드 확인
 if [ ! -f "$BINARY" ]; then

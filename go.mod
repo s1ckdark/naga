@@ -1,4 +1,4 @@
-module github.com/dave/clusterctl
+module github.com/dave/naga
 
 go 1.25.6
 

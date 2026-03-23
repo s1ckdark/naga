@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add a `clusterctl cluster monitor <name>` TUI command that shows real-time GPU metrics for all nodes in a cluster, with table and detail view modes.
+**Goal:** Add a `naga cluster monitor <name>` TUI command that shows real-time GPU metrics for all nodes in a cluster, with table and detail view modes.
 
 **Architecture:** SSH into each cluster node to run `nvidia-smi --query-gpu`, parse CSV output into domain types, feed into a bubbletea TUI that polls on an interval. Two view modes: table (default) and detail panels with sparklines.
 
@@ -315,7 +315,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // mockExecutor implements command execution for testing
@@ -383,7 +383,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 const nvidiaSmiCommand = "nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw,power.limit --format=csv,noheader,nounits"
@@ -477,8 +477,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ssh"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ssh"
 )
 
 // ViewMode determines how metrics are displayed
@@ -651,7 +651,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 var (
@@ -1090,8 +1090,8 @@ Keys:
 ```
 
 Note: also add these imports to the file:
-- `"github.com/dave/clusterctl/internal/infra/ssh"`
-- `"github.com/dave/clusterctl/internal/tui/monitor"`
+- `"github.com/dave/naga/internal/infra/ssh"`
+- `"github.com/dave/naga/internal/tui/monitor"`
 - `tea "github.com/charmbracelet/bubbletea"`
 
 And add a temporary helper (until repository is wired):
@@ -1106,7 +1106,7 @@ func findClusterByName(_ []*domain.Device, _ string) *domain.Cluster {
 
 **Step 2: Verify it compiles**
 
-Run: `go build ./cmd/clusterctl/`
+Run: `go build ./cmd/naga/`
 Expected: success
 
 **Step 3: Commit**
@@ -1146,7 +1146,7 @@ Remove the `findClusterByName` function.
 
 **Step 2: Verify**
 
-Run: `go build ./cmd/clusterctl/`
+Run: `go build ./cmd/naga/`
 Expected: success
 
 **Step 3: Commit**
@@ -1167,7 +1167,7 @@ Expected: all pass
 
 **Step 2: Manual smoke test**
 
-Run: `go build -o clusterctl ./cmd/clusterctl/ && ./clusterctl cluster monitor --help`
+Run: `go build -o naga ./cmd/naga/ && ./naga cluster monitor --help`
 Expected: shows help text with usage, flags, and key descriptions
 
 **Step 3: Commit any fixes**

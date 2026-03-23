@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/repository"
-	"github.com/dave/clusterctl/internal/repository/sqlite"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/repository"
+	"github.com/dave/naga/internal/repository/sqlite"
 )
 
 // --- Mock implementations ---

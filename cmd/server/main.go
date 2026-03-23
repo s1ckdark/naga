@@ -14,14 +14,14 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
-	"github.com/dave/clusterctl/config"
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ssh"
-	"github.com/dave/clusterctl/internal/infra/tailscale"
-	"github.com/dave/clusterctl/internal/repository/sqlite"
-	"github.com/dave/clusterctl/internal/usecase"
-	"github.com/dave/clusterctl/internal/web/handler"
-	"github.com/dave/clusterctl/internal/web/ws"
+	"github.com/dave/naga/config"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ssh"
+	"github.com/dave/naga/internal/infra/tailscale"
+	"github.com/dave/naga/internal/repository/sqlite"
+	"github.com/dave/naga/internal/usecase"
+	"github.com/dave/naga/internal/web/handler"
+	"github.com/dave/naga/internal/web/ws"
 )
 
 var (

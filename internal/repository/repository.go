@@ -3,7 +3,7 @@ package repository
 import (
 	"context"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // DeviceRepository defines operations for device persistence

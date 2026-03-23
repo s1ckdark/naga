@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // FailoverRayManager extends RayManager with checkpoint operations

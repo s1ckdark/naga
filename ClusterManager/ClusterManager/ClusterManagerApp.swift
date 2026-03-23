@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ClusterManagerApp: App {
+struct NagaApp: App {
     @StateObject private var dashboardVM = DashboardViewModel()
 
     var body: some Scene {

@@ -117,7 +117,7 @@ func DefaultConfig() *Config {
 		},
 		Database: DatabaseConfig{
 			Driver: "sqlite",
-			DSN:    filepath.Join(getConfigDir(), "clusterctl.db"),
+			DSN:    filepath.Join(getConfigDir(), "naga.db"),
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -144,17 +144,17 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	// Environment variables
-	viper.SetEnvPrefix("CLUSTERCTL")
+	viper.SetEnvPrefix("NAGA")
 	viper.AutomaticEnv()
 
 	// Map environment variables
 	viper.BindEnv("tailscale.api_key", "TAILSCALE_API_KEY")
 	viper.BindEnv("tailscale.oauth_client_id", "TAILSCALE_OAUTH_CLIENT_ID")
 	viper.BindEnv("tailscale.oauth_client_secret", "TAILSCALE_OAUTH_CLIENT_SECRET")
-	viper.BindEnv("ssh.user", "CLUSTERCTL_SSH_USER")
-	viper.BindEnv("ssh.private_key_path", "CLUSTERCTL_SSH_KEY")
-	viper.BindEnv("database.dsn", "CLUSTERCTL_DATABASE_DSN")
-	viper.BindEnv("server.api_key", "CLUSTERCTL_API_KEY")
+	viper.BindEnv("ssh.user", "NAGA_SSH_USER")
+	viper.BindEnv("ssh.private_key_path", "NAGA_SSH_KEY")
+	viper.BindEnv("database.dsn", "NAGA_DATABASE_DSN")
+	viper.BindEnv("server.api_key", "NAGA_API_KEY")
 
 	// Try to read config file
 	if err := viper.ReadInConfig(); err != nil {
@@ -203,11 +203,11 @@ func Save(cfg *Config) error {
 
 // getConfigDir returns the configuration directory path
 func getConfigDir() string {
-	if dir := os.Getenv("CLUSTERCTL_CONFIG_DIR"); dir != "" {
+	if dir := os.Getenv("NAGA_CONFIG_DIR"); dir != "" {
 		return dir
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".clusterctl")
+	return filepath.Join(home, ".naga")
 }
 
 // GetConfigDir exports the config directory path

@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/infra/ssh"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/infra/ssh"
 )
 
 // ViewMode controls which display mode the TUI uses.

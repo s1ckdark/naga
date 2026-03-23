@@ -10,8 +10,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 
-	"github.com/dave/clusterctl/internal/domain"
-	"github.com/dave/clusterctl/internal/web/ws"
+	"github.com/dave/naga/internal/domain"
+	"github.com/dave/naga/internal/web/ws"
 )
 
 var upgrader = websocket.Upgrader{

@@ -12,7 +12,7 @@ Automatic head node failover with AI-driven node selection, dual-layer failure d
 ## Architecture
 
 ```
-┌─ clusterctl server (primary monitor) ─────────────┐
+┌─ naga server (primary monitor) ─────────────┐
 │  heartbeat monitor → failure detection → AI select │
 │  (Claude API / fallback: rule-based)               │
 └────────────────────────────────────────────────────┘
@@ -68,11 +68,11 @@ Resume jobs from checkpoint
 - Checkpoint storage: shared storage (NFS) or local + rsync
 
 ### 6. Manual Head Migration
-- Existing: `clusterctl cluster change-head <cluster> <new-head>`
+- Existing: `naga cluster change-head <cluster> <new-head>`
 - Enhanced: save checkpoint → switch → recover flow
 
 ## New Files
-- `cmd/cluster-agent/main.go` — agent binary entrypoint
+- `cmd/naga-agent/main.go` — agent binary entrypoint
 - `internal/agent/agent.go` — node agent main loop
 - `internal/agent/heartbeat.go` — heartbeat protocol
 - `internal/agent/election.go` — head election logic (AI + fallback)

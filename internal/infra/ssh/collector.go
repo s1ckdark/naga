@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dave/clusterctl/internal/domain"
+	"github.com/dave/naga/internal/domain"
 )
 
 // Collector collects metrics from devices via SSH
