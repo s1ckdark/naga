@@ -15,11 +15,13 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"github.com/dave/clusterctl/config"
+	"github.com/dave/clusterctl/internal/domain"
 	"github.com/dave/clusterctl/internal/infra/ssh"
 	"github.com/dave/clusterctl/internal/infra/tailscale"
 	"github.com/dave/clusterctl/internal/repository/sqlite"
 	"github.com/dave/clusterctl/internal/usecase"
 	"github.com/dave/clusterctl/internal/web/handler"
+	"github.com/dave/clusterctl/internal/web/ws"
 )
 
 var (
@@ -124,6 +126,15 @@ func main() {
 	// Initialize handlers
 	h := handler.NewHandler(deviceUC, clusterUC, monitorUC, nil, cfg)
 
+	// Initialize WebSocket hub
+	wsHub := ws.NewHub()
+	go wsHub.Run()
+	h.SetWebSocketHub(wsHub)
+
+	// Initialize task queue
+	taskQueue := domain.NewTaskQueue()
+	h.SetTaskQueue(taskQueue)
+
 	// Start background metrics collection (every 30 seconds)
 	monitorCtx, monitorCancel := context.WithCancel(context.Background())
 	defer monitorCancel()
@@ -176,6 +187,20 @@ func main() {
 	apiWrite.POST("/clusters/:id/failover", h.APIClusterFailover)
 	apiWrite.POST("/clusters/:id/execute", h.APIClusterExecute)
 	apiWrite.POST("/devices/:id/execute", h.APIExecuteOnDevice)
+
+	// WebSocket endpoint
+	e.GET("/ws", h.HandleWebSocket)
+
+	// Task API routes
+	api.GET("/tasks", h.APITaskList)
+	api.GET("/tasks/:id", h.APITaskDetail)
+	api.POST("/tasks", h.APITaskCreate)
+	api.PUT("/tasks/:id/status", h.APITaskUpdateStatus)
+	api.PUT("/tasks/:id/result", h.APITaskSetResult)
+
+	// Capability routes
+	api.POST("/devices/:id/capabilities", h.APIRegisterCapabilities)
+	api.GET("/devices/:id/capabilities", h.APIGetCapabilities)
 
 	// Health check
 	e.GET("/health", func(c echo.Context) error {

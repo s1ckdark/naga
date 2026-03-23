@@ -16,6 +16,7 @@ import (
 	"github.com/dave/clusterctl/config"
 	"github.com/dave/clusterctl/internal/domain"
 	"github.com/dave/clusterctl/internal/usecase"
+	"github.com/dave/clusterctl/internal/web/ws"
 )
 
 // RemoteExecutor executes commands on remote devices
@@ -52,6 +53,8 @@ type Handler struct {
 	failoverUC *usecase.FailoverUseCase
 	executor   RemoteExecutor
 	cfg        *config.Config
+	wsHub      *ws.Hub
+	taskQueue  *domain.TaskQueue
 }
 
 // NewHandler creates a new Handler
@@ -74,6 +77,16 @@ func NewHandler(
 // SetExecutor sets the remote executor for distributed task execution
 func (h *Handler) SetExecutor(executor RemoteExecutor) {
 	h.executor = executor
+}
+
+// SetWebSocketHub sets the WebSocket hub
+func (h *Handler) SetWebSocketHub(hub *ws.Hub) {
+	h.wsHub = hub
+}
+
+// SetTaskQueue sets the task queue
+func (h *Handler) SetTaskQueue(queue *domain.TaskQueue) {
+	h.taskQueue = queue
 }
 
 // Dashboard renders the main dashboard
@@ -450,6 +463,14 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 		return c.HTML(http.StatusInternalServerError, `<p class="text-red-500">Failed to load devices</p>`)
 	}
 
+	var metricsMap map[string]*domain.DeviceMetrics
+	if h.monitorUC != nil {
+		snapshot, err := h.monitorUC.GetAllMetrics(ctx)
+		if err == nil && snapshot != nil {
+			metricsMap = snapshot.Devices
+		}
+	}
+
 	if len(devices) == 0 {
 		return c.HTML(http.StatusOK, `<p class="text-gray-500">No devices found</p>`)
 	}
@@ -465,6 +486,8 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 	<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
 	<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SSH</th>
 	<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">GPU</th>
+	<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">CPU</th>
+	<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Memory</th>
 </tr>
 </thead>
 <tbody class="bg-white divide-y divide-gray-200">`)
@@ -485,6 +508,29 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 		} else if d.GPUModel == "none" {
 			gpuBadge = `<span class="text-gray-400">None</span>`
 		}
+		cpuCell := `<span class="text-gray-400">-</span>`
+		memCell := `<span class="text-gray-400">-</span>`
+		if metricsMap != nil {
+			if m, ok := metricsMap[d.ID]; ok && !m.HasError() {
+				cpuColor := "green"
+				if m.CPU.UsagePercent > 80 {
+					cpuColor = "red"
+				} else if m.CPU.UsagePercent > 50 {
+					cpuColor = "yellow"
+				}
+				cpuCell = fmt.Sprintf(`<span class="text-%s-600 font-medium">%.1f%%</span>`, cpuColor, m.CPU.UsagePercent)
+
+				memColor := "green"
+				if m.Memory.UsagePercent > 80 {
+					memColor = "red"
+				} else if m.Memory.UsagePercent > 50 {
+					memColor = "yellow"
+				}
+				memGB := float64(m.Memory.Used) / 1073741824
+				totalGB := float64(m.Memory.Total) / 1073741824
+				memCell = fmt.Sprintf(`<span class="text-%s-600 font-medium">%.1f%% <span class="text-gray-400 text-xs">(%.1f/%.1fG)</span></span>`, memColor, m.Memory.UsagePercent, memGB, totalGB)
+			}
+		}
 		b.WriteString(fmt.Sprintf(`<tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/devices/%s'">
 	<td class="px-6 py-4 whitespace-nowrap">
 		<div class="text-sm font-medium text-gray-900">%s</div>
@@ -497,6 +543,8 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 	</td>
 	<td class="px-6 py-4 whitespace-nowrap text-sm">%s</td>
 	<td class="px-6 py-4 whitespace-nowrap text-sm">%s</td>
+	<td class="px-6 py-4 whitespace-nowrap text-sm">%s</td>
+	<td class="px-6 py-4 whitespace-nowrap text-sm">%s</td>
 </tr>`,
 			url.PathEscape(d.ID),
 			esc(d.GetDisplayName()), esc(d.Hostname),
@@ -505,6 +553,7 @@ func (h *Handler) HTMXDeviceList(c echo.Context) error {
 			statusColor, statusColor, esc(statusLabel),
 			sshBadge,
 			gpuBadge,
+			cpuCell, memCell,
 		))
 	}
 
@@ -565,6 +614,84 @@ func (h *Handler) HTMXDeviceDetail(c echo.Context) error {
 	}
 	b.WriteString(fmt.Sprintf(`<div><span class="text-sm text-gray-500">SSH</span><p class="font-medium">%s</p></div>`, sshStatus))
 	b.WriteString(`</div>`)
+
+	// Metrics section
+	if h.monitorUC != nil {
+		metrics, err := h.monitorUC.GetDeviceMetrics(ctx, id)
+		if err == nil && metrics != nil && !metrics.HasError() {
+			b.WriteString(`<div class="mt-6 border-t pt-4">`)
+			b.WriteString(`<h3 class="text-lg font-semibold text-gray-700 mb-3">System Metrics</h3>`)
+			b.WriteString(`<div class="grid grid-cols-1 md:grid-cols-3 gap-4">`)
+
+			// CPU card
+			cpuColor := "green"
+			if metrics.CPU.UsagePercent > 80 {
+				cpuColor = "red"
+			} else if metrics.CPU.UsagePercent > 50 {
+				cpuColor = "yellow"
+			}
+			b.WriteString(fmt.Sprintf(`<div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-sm text-gray-500 mb-1">CPU</div>
+            <div class="text-2xl font-bold text-%s-600">%.1f%%</div>
+            <div class="text-xs text-gray-400 mt-1">%d cores · %s</div>
+            <div class="text-xs text-gray-400">Load: %.2f / %.2f / %.2f</div>
+            <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-%s-500 h-2 rounded-full" style="width: %.0f%%"></div>
+            </div>
+        </div>`, cpuColor, metrics.CPU.UsagePercent, metrics.CPU.Cores, esc(metrics.CPU.ModelName),
+				metrics.CPU.LoadAvg1, metrics.CPU.LoadAvg5, metrics.CPU.LoadAvg15,
+				cpuColor, metrics.CPU.UsagePercent))
+
+			// Memory card
+			memColor := "green"
+			if metrics.Memory.UsagePercent > 80 {
+				memColor = "red"
+			} else if metrics.Memory.UsagePercent > 50 {
+				memColor = "yellow"
+			}
+			usedGB := float64(metrics.Memory.Used) / 1073741824
+			totalGB := float64(metrics.Memory.Total) / 1073741824
+			availGB := float64(metrics.Memory.Available) / 1073741824
+			b.WriteString(fmt.Sprintf(`<div class="bg-gray-50 rounded-lg p-4">
+            <div class="text-sm text-gray-500 mb-1">Memory</div>
+            <div class="text-2xl font-bold text-%s-600">%.1f%%</div>
+            <div class="text-xs text-gray-400 mt-1">%.1fG used / %.1fG total</div>
+            <div class="text-xs text-gray-400">Available: %.1fG</div>
+            <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                <div class="bg-%s-500 h-2 rounded-full" style="width: %.0f%%"></div>
+            </div>
+        </div>`, memColor, metrics.Memory.UsagePercent, usedGB, totalGB, availGB,
+				memColor, metrics.Memory.UsagePercent))
+
+			// Disk card
+			if len(metrics.Disk.Partitions) > 0 {
+				b.WriteString(`<div class="bg-gray-50 rounded-lg p-4">
+                <div class="text-sm text-gray-500 mb-1">Disk</div>`)
+				for _, p := range metrics.Disk.Partitions {
+					diskColor := "green"
+					if p.UsagePercent > 90 {
+						diskColor = "red"
+					} else if p.UsagePercent > 70 {
+						diskColor = "yellow"
+					}
+					pUsedGB := float64(p.Used) / 1073741824
+					pTotalGB := float64(p.Total) / 1073741824
+					b.WriteString(fmt.Sprintf(`<div class="mb-2">
+                    <div class="text-xs text-gray-500">%s</div>
+                    <div class="text-sm font-bold text-%s-600">%.1f%% <span class="font-normal text-gray-400">(%.0fG/%.0fG)</span></div>
+                    <div class="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                        <div class="bg-%s-500 h-1.5 rounded-full" style="width: %.0f%%"></div>
+                    </div>
+                </div>`, esc(p.MountPoint), diskColor, p.UsagePercent, pUsedGB, pTotalGB,
+						diskColor, p.UsagePercent))
+				}
+				b.WriteString(`</div>`)
+			}
+
+			b.WriteString(`</div></div>`)
+		}
+	}
+
 	b.WriteString(`<div class="mt-4"><a href="/devices" class="text-blue-500 hover:underline">← Back to devices</a></div>`)
 	b.WriteString(`</div>`)
 

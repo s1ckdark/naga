@@ -32,6 +32,10 @@ type Device struct {
 	HasGPU        bool         `json:"hasGpu"`
 	GPUModel      string       `json:"gpuModel,omitempty"`
 	GPUCount      int          `json:"gpuCount"`
+	Capabilities   []string    `json:"capabilities,omitempty"`   // e.g., ["compute","gpu","gps","camera","sms"]
+	DeviceToken    string      `json:"deviceToken,omitempty"`    // APNS token for push notifications
+	ConnectionType string      `json:"connectionType,omitempty"` // "ssh", "websocket", "offline"
+	APIKeyHash     string      `json:"-"`                        // hashed API key for external auth
 }
 
 // IsGPUCandidate returns true if the device could potentially have a GPU (Linux + SSH)
@@ -55,6 +59,21 @@ func (d *Device) GetDisplayName() string {
 		return d.Name
 	}
 	return d.Hostname
+}
+
+// HasCapability returns true if the device has the given capability
+func (d *Device) HasCapability(cap string) bool {
+	for _, c := range d.Capabilities {
+		if c == cap {
+			return true
+		}
+	}
+	return false
+}
+
+// IsMobile returns true if the device OS is iOS or Android
+func (d *Device) IsMobile() bool {
+	return d.OS == "iOS" || d.OS == "Android"
 }
 
 // DeviceFilter represents filters for querying devices
