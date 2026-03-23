@@ -116,10 +116,11 @@ func (c *Collector) CollectMetricsParallel(ctx context.Context, devices []*domai
 func (c *Collector) collectCPU(ctx context.Context, device *domain.Device) (*domain.CPUMetrics, error) {
 	cpu := &domain.CPUMetrics{}
 
-	// Get load average
+	// Get load average (macOS vm.loadavg returns "{ 1.23 2.34 3.45 }", strip braces)
 	output, err := c.executor.Execute(ctx, device, "cat /proc/loadavg 2>/dev/null || sysctl -n vm.loadavg 2>/dev/null")
 	if err == nil {
-		parts := strings.Fields(output)
+		cleaned := strings.NewReplacer("{", "", "}", "").Replace(output)
+		parts := strings.Fields(cleaned)
 		if len(parts) >= 3 {
 			cpu.LoadAvg1, _ = strconv.ParseFloat(parts[0], 64)
 			cpu.LoadAvg5, _ = strconv.ParseFloat(parts[1], 64)
@@ -139,15 +140,100 @@ func (c *Collector) collectCPU(ctx context.Context, device *domain.Device) (*dom
 		cpu.ModelName = strings.TrimSpace(output)
 	}
 
-	// Calculate usage percent (rough estimate from load average)
-	if cpu.Cores > 0 {
-		cpu.UsagePercent = (cpu.LoadAvg1 / float64(cpu.Cores)) * 100
-		if cpu.UsagePercent > 100 {
-			cpu.UsagePercent = 100
+	// Get actual CPU usage percent
+	cpu.UsagePercent = c.collectCPUUsage(ctx, device)
+
+	return cpu, nil
+}
+
+// collectCPUUsage gets real CPU usage percentage.
+// Linux: delta of /proc/stat between two samples.
+// macOS: parses "CPU usage" from top (second sample for accuracy).
+func (c *Collector) collectCPUUsage(ctx context.Context, device *domain.Device) float64 {
+	// Try Linux /proc/stat first: two samples 1s apart, calculate delta
+	cmd := `cat /proc/stat 2>/dev/null | head -1`
+	out1, err := c.executor.Execute(ctx, device, cmd)
+	if err == nil && strings.HasPrefix(out1, "cpu ") {
+		// Sleep 1s and take second sample
+		cmd2 := `sleep 1 && cat /proc/stat | head -1`
+		out2, err2 := c.executor.Execute(ctx, device, cmd2)
+		if err2 == nil {
+			return parseProcStatDelta(out1, out2)
 		}
 	}
 
-	return cpu, nil
+	// macOS: top -l 2 takes two samples; second line is accurate
+	out, err := c.executor.Execute(ctx, device, `top -l 2 -n 0 -s 1 2>/dev/null | grep "CPU usage" | tail -1`)
+	if err == nil && strings.Contains(out, "CPU usage") {
+		return parseMacOSTopCPU(out)
+	}
+
+	return 0
+}
+
+// parseProcStatDelta calculates CPU usage % from two /proc/stat "cpu" lines.
+// Format: cpu user nice system idle iowait irq softirq steal
+func parseProcStatDelta(line1, line2 string) float64 {
+	parse := func(line string) (idle, total uint64) {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			return 0, 0
+		}
+		// fields[0] = "cpu", fields[1..] = user nice system idle ...
+		var vals []uint64
+		for _, f := range fields[1:] {
+			v, _ := strconv.ParseUint(f, 10, 64)
+			vals = append(vals, v)
+			total += v
+		}
+		if len(vals) >= 4 {
+			idle = vals[3] // idle is the 4th value
+		}
+		return idle, total
+	}
+
+	idle1, total1 := parse(line1)
+	idle2, total2 := parse(line2)
+
+	totalDelta := total2 - total1
+	idleDelta := idle2 - idle1
+
+	if totalDelta == 0 {
+		return 0
+	}
+
+	usage := float64(totalDelta-idleDelta) / float64(totalDelta) * 100
+	if usage < 0 {
+		return 0
+	}
+	if usage > 100 {
+		return 100
+	}
+	return usage
+}
+
+// parseMacOSTopCPU parses macOS top output like:
+// "CPU usage: 12.34% user, 5.67% sys, 81.99% idle"
+func parseMacOSTopCPU(line string) float64 {
+	var user, sys float64
+	parts := strings.Split(line, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		fields := strings.Fields(p)
+		for i, f := range fields {
+			if strings.HasSuffix(f, "%") && i+1 < len(fields) {
+				val, _ := strconv.ParseFloat(strings.TrimSuffix(f, "%"), 64)
+				label := fields[i+1]
+				switch label {
+				case "user":
+					user = val
+				case "sys":
+					sys = val
+				}
+			}
+		}
+	}
+	return user + sys
 }
 
 // collectMemory collects memory metrics
