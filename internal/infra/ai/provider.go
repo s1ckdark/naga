@@ -58,7 +58,7 @@ type Config struct {
 
 // ProviderConfig holds credentials and routing info for a single provider.
 type ProviderConfig struct {
-	Provider string `json:"provider"` // "claude", "openai", "zai", "local"
+	Provider string `json:"provider"` // "claude", "openai", "ollama", "lmstudio", "zai", "local"
 	APIKey   string `json:"apiKey"`
 	Model    string `json:"model"`
 	Endpoint string `json:"endpoint"` // for local/zai custom endpoints

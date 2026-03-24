@@ -70,7 +70,7 @@ database:
 
 # Agent AI Provider Settings
 agent:
-  # AI provider for cluster decisions: claude, ollama, openai
+  # AI provider for cluster decisions: claude, ollama, lmstudio, openai
   # Leave empty to auto-detect (claude if API key exists, otherwise ollama)
   ai_provider: ""
 

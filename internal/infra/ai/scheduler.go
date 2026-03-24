@@ -7,6 +7,21 @@ import (
 	"github.com/dave/naga/internal/domain"
 )
 
+// BuildSelectionPrompt constructs the prompt sent to an AI provider for
+// head node election. The AI must respond with ONLY valid JSON.
+func BuildSelectionPrompt(candidates []domain.ElectionCandidate) string {
+	candidateJSON, _ := json.MarshalIndent(candidates, "", "  ")
+	return fmt.Sprintf(`You are a cluster management AI. The head node has failed and you must select the best replacement.
+
+Candidates:
+%s
+
+Select considering: lower GPU utilization, more free memory, lower latency, fewer running jobs.
+
+Respond with ONLY valid JSON:
+{"node_id": "<selected_node_id>", "reason": "<brief explanation>"}`, string(candidateJSON))
+}
+
 // RuleBasedScheduler is the deterministic fallback scheduler.
 // Scoring weights: GPU 40%, Memory 30%, CPU 20%, Queue depth 10%.
 type RuleBasedScheduler struct{}

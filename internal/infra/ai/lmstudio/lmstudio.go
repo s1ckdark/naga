@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/dave/naga/internal/domain"
 	"github.com/dave/naga/internal/infra/ai"
@@ -35,13 +37,13 @@ func NewProvider(endpoint, model string) *Provider {
 	return &Provider{
 		endpoint: endpoint,
 		model:    model,
-		client:   &http.Client{},
+		client:   &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
 // SelectHead implements ai.HeadSelector.
 func (p *Provider) SelectHead(ctx context.Context, candidates []domain.ElectionCandidate) (string, string, error) {
-	prompt := buildSelectionPrompt(candidates)
+	prompt := ai.BuildSelectionPrompt(candidates)
 	text, err := p.chatCompletion(ctx, prompt)
 	if err != nil {
 		return "", "", err
@@ -115,7 +117,8 @@ func (p *Provider) chatCompletion(ctx context.Context, prompt string) (string, e
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("lmstudio API returned status %d", resp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("lmstudio API returned status %d: %s", resp.StatusCode, string(errBody))
 	}
 
 	var result struct {
@@ -170,19 +173,6 @@ func (p *Provider) ListModels(ctx context.Context) ([]ModelInfo, error) {
 		return nil, err
 	}
 	return result.Data, nil
-}
-
-func buildSelectionPrompt(candidates []domain.ElectionCandidate) string {
-	candidateJSON, _ := json.MarshalIndent(candidates, "", "  ")
-	return fmt.Sprintf(`You are a cluster management AI. The head node has failed and you must select the best replacement.
-
-Candidates:
-%s
-
-Select considering: lower GPU utilization, more free memory, lower latency, fewer running jobs.
-
-Respond with ONLY valid JSON:
-{"node_id": "<selected_node_id>", "reason": "<brief explanation>"}`, string(candidateJSON))
 }
 
 // ModelInfo describes an LM Studio model.

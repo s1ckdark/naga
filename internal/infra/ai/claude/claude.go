@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/dave/naga/internal/domain"
-	"github.com/dave/naga/internal/infra/ai"
+	ai "github.com/dave/naga/internal/infra/ai"
 )
 
 const (
@@ -42,7 +42,7 @@ func (p *Provider) SelectHead(ctx context.Context, candidates []domain.ElectionC
 		return "", "", fmt.Errorf("anthropic API key not configured")
 	}
 
-	prompt := buildSelectionPrompt(candidates)
+	prompt := ai.BuildSelectionPrompt(candidates)
 	text, err := p.call(ctx, prompt, 256)
 	if err != nil {
 		return "", "", err
@@ -127,15 +127,3 @@ func (p *Provider) call(ctx context.Context, prompt string, maxTokens int) (stri
 	return result.Content[0].Text, nil
 }
 
-func buildSelectionPrompt(candidates []domain.ElectionCandidate) string {
-	candidateJSON, _ := json.MarshalIndent(candidates, "", "  ")
-	return fmt.Sprintf(`You are a cluster management AI. The head node has failed and you must select the best replacement.
-
-Candidates:
-%s
-
-Select considering: lower GPU utilization, more free memory, lower latency, fewer running jobs.
-
-Respond with ONLY valid JSON:
-{"node_id": "<selected_node_id>", "reason": "<brief explanation>"}`, string(candidateJSON))
-}

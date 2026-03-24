@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -128,6 +129,26 @@ func resolveHeadSelector(provider, anthropicKey, ollamaEndpoint, ollamaModel, lm
 		if lmstudioEndpoint != "" || lmstudioModel != "" {
 			return lmstudio.NewProvider(lmstudioEndpoint, lmstudioModel)
 		}
+		// Probe default local endpoints
+		if probeEndpoint("http://localhost:11434/api/tags") {
+			log.Println("auto-detected ollama on localhost:11434")
+			return ollama.NewProvider("", "")
+		}
+		if probeEndpoint("http://localhost:1234/v1/models") {
+			log.Println("auto-detected lmstudio on localhost:1234")
+			return lmstudio.NewProvider("", "")
+		}
+		log.Println("no AI provider configured, using rule-based fallback")
 		return nil
 	}
+}
+
+func probeEndpoint(url string) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }

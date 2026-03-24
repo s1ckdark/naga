@@ -201,6 +201,12 @@ func Save(cfg *Config) error {
 	viper.Set("database.dsn", cfg.Database.DSN)
 	viper.Set("log.level", cfg.Log.Level)
 	viper.Set("log.format", cfg.Log.Format)
+	viper.Set("agent.ai_provider", cfg.Agent.AIProvider)
+	viper.Set("agent.anthropic_api_key", cfg.Agent.AnthropicAPIKey)
+	viper.Set("agent.ollama_endpoint", cfg.Agent.OllamaEndpoint)
+	viper.Set("agent.ollama_model", cfg.Agent.OllamaModel)
+	viper.Set("agent.lmstudio_endpoint", cfg.Agent.LMStudioEndpoint)
+	viper.Set("agent.lmstudio_model", cfg.Agent.LMStudioModel)
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	return viper.WriteConfigAs(configPath)

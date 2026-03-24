@@ -71,20 +71,20 @@ func TestConfig_Validate(t *testing.T) {
 }
 
 func TestGetConfigDir_EnvOverride(t *testing.T) {
-	original := os.Getenv("CLUSTERCTL_CONFIG_DIR")
-	defer os.Setenv("CLUSTERCTL_CONFIG_DIR", original)
+	original := os.Getenv("NAGA_CONFIG_DIR")
+	defer os.Setenv("NAGA_CONFIG_DIR", original)
 
-	os.Setenv("CLUSTERCTL_CONFIG_DIR", "/tmp/test-config")
+	os.Setenv("NAGA_CONFIG_DIR", "/tmp/test-config")
 	if dir := GetConfigDir(); dir != "/tmp/test-config" {
 		t.Errorf("GetConfigDir() = %q, want /tmp/test-config", dir)
 	}
 }
 
 func TestGetConfigDir_Default(t *testing.T) {
-	original := os.Getenv("CLUSTERCTL_CONFIG_DIR")
-	defer os.Setenv("CLUSTERCTL_CONFIG_DIR", original)
+	original := os.Getenv("NAGA_CONFIG_DIR")
+	defer os.Setenv("NAGA_CONFIG_DIR", original)
 
-	os.Unsetenv("CLUSTERCTL_CONFIG_DIR")
+	os.Unsetenv("NAGA_CONFIG_DIR")
 	dir := GetConfigDir()
 	if dir == "" {
 		t.Error("GetConfigDir() should return non-empty default")
