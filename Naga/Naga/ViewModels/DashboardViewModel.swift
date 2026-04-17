@@ -22,10 +22,27 @@ class DashboardViewModel: ObservableObject {
         case connected, disconnected, unknown
     }
 
+    /// Combined health used by the top banner.
+    /// - healthy:  server reachable AND all devices online
+    /// - degraded: server reachable BUT one or more devices offline
+    /// - down:     server unreachable (device status unknown)
+    /// - unknown:  still checking
+    enum SystemHealth {
+        case healthy, degraded, down, unknown
+    }
+
     var gpuDevices: [Device] { devices.filter { $0.hasGpu } }
     var onlineDevices: [Device] { devices.filter { $0.isOnline } }
     var offlineDevices: [Device] { devices.filter { !$0.isOnline } }
     var totalGPUs: Int { gpuDevices.reduce(0) { $0 + $1.gpuCount } }
+
+    var systemHealth: SystemHealth {
+        switch serverStatus {
+        case .unknown: return .unknown
+        case .disconnected: return .down
+        case .connected: return offlineDevices.isEmpty ? .healthy : .degraded
+        }
+    }
 
     // GPU aggregate stats
     var avgGPUUtilization: Double {

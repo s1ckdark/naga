@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bgA" cx="50%" cy="45%" r="70%">
+      <stop offset="0%" stop-color="#1A3A47"/>
+      <stop offset="55%" stop-color="#123240"/>
+      <stop offset="100%" stop-color="#08151C"/>
+    </radialGradient>
+    <linearGradient id="hoodA" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#4FF0D4"/>
+      <stop offset="50%" stop-color="#2EC4B6"/>
+      <stop offset="100%" stop-color="#1A8C7D"/>
+    </linearGradient>
+    <linearGradient id="hoodInnerA" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#2EC4B6"/>
+      <stop offset="100%" stop-color="#106D63"/>
+    </linearGradient>
+    <radialGradient id="jewelA" cx="40%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#FFF7DC"/>
+      <stop offset="30%" stop-color="#F4C95D"/>
+      <stop offset="75%" stop-color="#C88A1E"/>
+      <stop offset="100%" stop-color="#7A4D10"/>
+    </radialGradient>
+    <linearGradient id="headA" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#5FF3DA"/>
+      <stop offset="100%" stop-color="#229A8D"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4FF0D4" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#4FF0D4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softA" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded square background (macOS app icon squircle) -->
+  <rect x="0" y="0" width="1024" height="1024" rx="229" ry="229" fill="url(#bgA)"/>
+
+  <!-- Ambient glow behind hood -->
+  <circle cx="512" cy="512" r="380" fill="url(#glowA)"/>
+
+  <!-- Outer hood (classic cobra spectacle shape, symmetrical) -->
+  <path d="M 512 280
+           C 280 280, 210 450, 240 680
+           C 270 820, 380 900, 512 905
+           C 644 900, 754 820, 784 680
+           C 814 450, 744 280, 512 280 Z"
+        fill="url(#hoodA)"/>
+
+  <!-- Inner hood panel (slightly darker, recessed) -->
+  <path d="M 512 330
+           C 320 330, 262 470, 288 670
+           C 312 790, 408 860, 512 865
+           C 616 860, 712 790, 736 670
+           C 762 470, 704 330, 512 330 Z"
+        fill="url(#hoodInnerA)"/>
+
+  <!-- Sacred mandala / network mesh inside hood -->
+  <g opacity="0.75" stroke="#0B1F2A" stroke-width="3" fill="none" stroke-linecap="round">
+    <!-- outer ring of nodes -->
+    <circle cx="512" cy="495" r="145" stroke-dasharray="6 10" stroke-width="2"/>
+    <!-- inner triangles (star of network) -->
+    <polygon points="512,380 640,560 384,560" opacity="0.6"/>
+    <polygon points="512,620 384,440 640,440" opacity="0.6"/>
+    <!-- connecting lines -->
+    <line x1="384" y1="560" x2="640" y2="560"/>
+    <line x1="384" y1="440" x2="640" y2="440"/>
+    <line x1="384" y1="440" x2="512" y2="620"/>
+    <line x1="640" y1="440" x2="512" y2="620"/>
+    <line x1="384" y1="560" x2="512" y2="380"/>
+    <line x1="640" y1="560" x2="512" y2="380"/>
+  </g>
+
+  <!-- Node dots at mandala vertices -->
+  <g fill="#F4C95D">
+    <circle cx="512" cy="380" r="10" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="640" cy="560" r="10" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="384" cy="560" r="10" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="512" cy="620" r="8" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="384" cy="440" r="8" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="640" cy="440" r="8" stroke="#0B1F2A" stroke-width="2"/>
+  </g>
+  <circle cx="512" cy="500" r="14" fill="#F4C95D" stroke="#0B1F2A" stroke-width="2"/>
+
+  <!-- Jewel (mani) at top center of hood -->
+  <g>
+    <circle cx="512" cy="270" r="38" fill="url(#jewelA)" stroke="#0B1F2A" stroke-width="3"/>
+    <!-- jewel highlight -->
+    <ellipse cx="500" cy="254" rx="14" ry="10" fill="#FFF7DC" opacity="0.85"/>
+    <!-- jewel crown mount -->
+    <path d="M 480 300 Q 512 318 544 300 L 538 306 Q 512 322 486 306 Z" fill="#1A8C7D" stroke="#0B1F2A" stroke-width="1.5"/>
+  </g>
+
+  <!-- FIVE COBRA HEADS rising from the hood crest -->
+  <!-- Central head (largest, with jewel above) -->
+  <g>
+    <!-- neck -->
+    <path d="M 488 270 Q 492 220 506 190 Q 518 220 536 270 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="3"/>
+    <!-- head -->
+    <path d="M 478 190 Q 512 130 546 190 Q 542 230 512 245 Q 482 230 478 190 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="3"/>
+    <!-- eyes -->
+    <circle cx="498" cy="188" r="5" fill="#0B1F2A"/>
+    <circle cx="526" cy="188" r="5" fill="#0B1F2A"/>
+    <circle cx="499" cy="186" r="1.5" fill="#FFF7DC"/>
+    <circle cx="527" cy="186" r="1.5" fill="#FFF7DC"/>
+    <!-- forked tongue -->
+    <path d="M 512 245 L 508 275 M 512 245 L 516 275 M 508 275 L 506 283 M 516 275 L 518 283" stroke="#F4C95D" stroke-width="3" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- Upper-left head -->
+  <g>
+    <path d="M 400 260 Q 380 210 372 175 Q 396 202 420 220 Q 424 252 400 260 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="2.5"/>
+    <path d="M 340 180 Q 356 130 396 148 Q 412 180 400 212 Q 368 220 340 180 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="2.5"/>
+    <circle cx="360" cy="170" r="4" fill="#0B1F2A"/>
+    <circle cx="386" cy="165" r="4" fill="#0B1F2A"/>
+  </g>
+
+  <!-- Upper-right head (mirror) -->
+  <g>
+    <path d="M 624 260 Q 644 210 652 175 Q 628 202 604 220 Q 600 252 624 260 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="2.5"/>
+    <path d="M 684 180 Q 668 130 628 148 Q 612 180 624 212 Q 656 220 684 180 Z" fill="url(#headA)" stroke="#0B1F2A" stroke-width="2.5"/>
+    <circle cx="664" cy="170" r="4" fill="#0B1F2A"/>
+    <circle cx="638" cy="165" r="4" fill="#0B1F2A"/>
+  </g>
+
+  <!-- Far-left head -->
+  <g>
+    <path d="M 280 320 Q 250 285 232 250 Q 248 300 272 332 Q 288 340 280 320 Z" fill="#2EC4B6" stroke="#0B1F2A" stroke-width="2"/>
+    <path d="M 200 265 Q 212 220 252 232 Q 272 262 256 294 Q 222 300 200 265 Z" fill="#2EC4B6" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="222" cy="258" r="3.5" fill="#0B1F2A"/>
+    <circle cx="246" cy="252" r="3.5" fill="#0B1F2A"/>
+  </g>
+
+  <!-- Far-right head (mirror) -->
+  <g>
+    <path d="M 744 320 Q 774 285 792 250 Q 776 300 752 332 Q 736 340 744 320 Z" fill="#2EC4B6" stroke="#0B1F2A" stroke-width="2"/>
+    <path d="M 824 265 Q 812 220 772 232 Q 752 262 768 294 Q 802 300 824 265 Z" fill="#2EC4B6" stroke="#0B1F2A" stroke-width="2"/>
+    <circle cx="802" cy="258" r="3.5" fill="#0B1F2A"/>
+    <circle cx="778" cy="252" r="3.5" fill="#0B1F2A"/>
+  </g>
+
+  <!-- Hood bottom ornamental band -->
+  <g opacity="0.6" stroke="#0B1F2A" stroke-width="2" fill="none">
+    <path d="M 340 820 Q 380 840 420 820 Q 460 840 500 820 Q 540 840 580 820 Q 620 840 660 820 Q 700 840 740 820"/>
+  </g>
+
+  <!-- Subtle scale texture on hood (tiny chevrons) -->
+  <g opacity="0.25" stroke="#0B1F2A" stroke-width="1" fill="none">
+    <path d="M 340 700 Q 350 706 360 700"/>
+    <path d="M 380 720 Q 390 726 400 720"/>
+    <path d="M 420 740 Q 430 746 440 740"/>
+    <path d="M 460 755 Q 470 761 480 755"/>
+    <path d="M 500 760 Q 510 766 520 760"/>
+    <path d="M 540 755 Q 550 761 560 755"/>
+    <path d="M 580 740 Q 590 746 600 740"/>
+    <path d="M 620 720 Q 630 726 640 720"/>
+    <path d="M 660 700 Q 670 706 680 700"/>
+  </g>
+</svg>

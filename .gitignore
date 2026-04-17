@@ -53,8 +53,11 @@ config.yaml
 .omc/
 .claude/*
 !.claude/mcp.json
+.superpowers/
 
 # MCP server
 mcp-server/node_modules/
 mcp-server/dist/
 Naga/.build/
+Naga/.swiftpm/xcode/**/xcuserdata/
+.omx/

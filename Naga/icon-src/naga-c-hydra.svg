@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bgC" cx="50%" cy="60%" r="75%">
+      <stop offset="0%" stop-color="#1F2B52"/>
+      <stop offset="60%" stop-color="#141E3D"/>
+      <stop offset="100%" stop-color="#070B1B"/>
+    </radialGradient>
+    <linearGradient id="spineC" x1="50%" y1="100%" x2="50%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="45%" stop-color="#7B6CFF"/>
+      <stop offset="100%" stop-color="#C4B5FD"/>
+    </linearGradient>
+    <linearGradient id="hoodLeftC" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C4B5FD"/>
+      <stop offset="100%" stop-color="#6D5EDB"/>
+    </linearGradient>
+    <linearGradient id="hoodCenterC" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#D4C6FD"/>
+      <stop offset="100%" stop-color="#6D5EDB"/>
+    </linearGradient>
+    <linearGradient id="hoodRightC" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#C4B5FD"/>
+      <stop offset="100%" stop-color="#6D5EDB"/>
+    </linearGradient>
+    <radialGradient id="jewelC" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#FFF7DC"/>
+      <stop offset="40%" stop-color="#F5B642"/>
+      <stop offset="100%" stop-color="#7A4D10"/>
+    </radialGradient>
+    <linearGradient id="waterC" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square bg -->
+  <rect x="0" y="0" width="1024" height="1024" rx="229" ry="229" fill="url(#bgC)"/>
+
+  <!-- Water base ripples at bottom -->
+  <g opacity="0.9">
+    <ellipse cx="512" cy="905" rx="340" ry="16" fill="#38BDF8" opacity="0.18"/>
+    <ellipse cx="512" cy="890" rx="260" ry="10" fill="#38BDF8" opacity="0.28"/>
+    <ellipse cx="512" cy="878" rx="180" ry="6" fill="#38BDF8" opacity="0.4"/>
+  </g>
+  <g stroke="#38BDF8" stroke-width="2" fill="none" opacity="0.5">
+    <path d="M 220 900 Q 260 890 300 900 Q 340 910 380 900"/>
+    <path d="M 644 900 Q 684 890 724 900 Q 764 910 804 900"/>
+    <path d="M 160 915 Q 200 905 240 915"/>
+    <path d="M 784 915 Q 824 905 864 915"/>
+  </g>
+
+  <!-- Main sinuous S-curve body rising from water -->
+  <path d="M 512 880
+           C 612 810, 420 720, 540 620
+           C 660 520, 460 440, 512 360"
+        stroke="url(#spineC)"
+        stroke-width="56"
+        fill="none"
+        stroke-linecap="round"/>
+
+  <!-- Body highlight (lit side) -->
+  <path d="M 512 880
+           C 612 810, 420 720, 540 620
+           C 660 520, 460 440, 512 360"
+        stroke="#D4C6FD"
+        stroke-width="14"
+        fill="none"
+        stroke-linecap="round"
+        opacity="0.35"
+        transform="translate(-6 -4)"/>
+
+  <!-- Scale pattern along body -->
+  <g stroke="#1A1332" stroke-width="2.5" fill="none" opacity="0.6" stroke-linecap="round">
+    <path d="M 498 855 Q 512 862 526 855"/>
+    <path d="M 528 820 Q 542 827 556 820"/>
+    <path d="M 540 780 Q 554 787 568 780"/>
+    <path d="M 500 745 Q 514 752 528 745"/>
+    <path d="M 460 715 Q 474 722 488 715"/>
+    <path d="M 450 675 Q 464 682 478 675"/>
+    <path d="M 480 640 Q 494 647 508 640"/>
+    <path d="M 530 610 Q 544 617 558 610"/>
+    <path d="M 560 570 Q 574 577 588 570"/>
+    <path d="M 540 530 Q 554 537 568 530"/>
+    <path d="M 500 490 Q 514 497 528 490"/>
+    <path d="M 470 450 Q 484 457 498 450"/>
+    <path d="M 490 410 Q 504 417 518 410"/>
+    <path d="M 510 375 Q 524 382 538 375"/>
+  </g>
+
+  <!-- Branching at top: 3 necks splitting from body peak -->
+  <!-- Left neck -->
+  <path d="M 512 360 Q 420 290 320 240" stroke="url(#spineC)" stroke-width="44" fill="none" stroke-linecap="round"/>
+  <!-- Center neck (straight up) -->
+  <path d="M 512 360 L 512 230" stroke="url(#spineC)" stroke-width="50" fill="none" stroke-linecap="round"/>
+  <!-- Right neck -->
+  <path d="M 512 360 Q 604 290 704 240" stroke="url(#spineC)" stroke-width="44" fill="none" stroke-linecap="round"/>
+
+  <!-- Central junction plate (decorative) -->
+  <circle cx="512" cy="360" r="22" fill="#7B6CFF" stroke="#1A1332" stroke-width="3"/>
+  <circle cx="512" cy="360" r="10" fill="#D4C6FD"/>
+
+  <!-- LEFT HEAD with hood -->
+  <g transform="translate(-6 0)">
+    <!-- Hood flare -->
+    <path d="M 230 225 Q 320 160 400 220 Q 392 302 320 320 Q 248 302 230 225 Z"
+          fill="url(#hoodLeftC)" stroke="#1A1332" stroke-width="3"/>
+    <!-- inner hood -->
+    <path d="M 254 230 Q 320 180 378 228 Q 370 294 320 308 Q 268 294 254 230 Z"
+          fill="#D4C6FD"/>
+    <!-- hood pattern dots -->
+    <g fill="#F5B642">
+      <circle cx="320" cy="220" r="3"/>
+      <circle cx="300" cy="245" r="2.5"/>
+      <circle cx="340" cy="245" r="2.5"/>
+      <circle cx="288" cy="275" r="2"/>
+      <circle cx="352" cy="275" r="2"/>
+    </g>
+    <!-- head -->
+    <path d="M 276 238 Q 320 195 364 238 Q 360 292 320 308 Q 280 292 276 238 Z"
+          fill="#A78BFA" stroke="#1A1332" stroke-width="2.5"/>
+    <!-- eyes -->
+    <circle cx="302" cy="248" r="6" fill="#1A1332"/>
+    <circle cx="338" cy="248" r="6" fill="#1A1332"/>
+    <circle cx="304" cy="246" r="2" fill="#FFF7DC"/>
+    <circle cx="340" cy="246" r="2" fill="#FFF7DC"/>
+    <!-- forked tongue -->
+    <path d="M 320 310 L 316 328 M 320 310 L 324 328" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- CENTER HEAD (tallest, with jewel) with hood -->
+  <g>
+    <!-- Hood flare (larger) -->
+    <path d="M 408 180 Q 512 108 616 180 Q 608 292 512 320 Q 416 292 408 180 Z"
+          fill="url(#hoodCenterC)" stroke="#1A1332" stroke-width="4"/>
+    <!-- inner hood -->
+    <path d="M 434 190 Q 512 128 590 190 Q 580 280 512 302 Q 444 280 434 190 Z"
+          fill="#D4C6FD"/>
+    <!-- hood ornament pattern (mandala) -->
+    <g fill="none" stroke="#1A1332" stroke-width="2" opacity="0.6">
+      <circle cx="512" cy="220" r="26" stroke-dasharray="4 6"/>
+      <line x1="512" y1="194" x2="512" y2="246"/>
+      <line x1="486" y1="220" x2="538" y2="220"/>
+      <line x1="494" y1="202" x2="530" y2="238"/>
+      <line x1="494" y1="238" x2="530" y2="202"/>
+    </g>
+    <g fill="#F5B642">
+      <circle cx="512" cy="220" r="3.5"/>
+      <circle cx="486" cy="220" r="2.5"/>
+      <circle cx="538" cy="220" r="2.5"/>
+      <circle cx="512" cy="194" r="2.5"/>
+      <circle cx="512" cy="246" r="2.5"/>
+    </g>
+    <!-- head -->
+    <path d="M 460 198 Q 512 140 564 198 Q 558 280 512 298 Q 466 280 460 198 Z"
+          fill="#A78BFA" stroke="#1A1332" stroke-width="3"/>
+    <!-- eyes -->
+    <circle cx="490" cy="210" r="8" fill="#1A1332"/>
+    <circle cx="534" cy="210" r="8" fill="#1A1332"/>
+    <circle cx="492" cy="207" r="2.5" fill="#FFF7DC"/>
+    <circle cx="536" cy="207" r="2.5" fill="#FFF7DC"/>
+    <!-- forked tongue -->
+    <path d="M 512 300 Q 508 320 504 332 M 512 300 Q 516 320 520 332"
+          stroke="#38BDF8" stroke-width="4" stroke-linecap="round" fill="none"/>
+    <!-- Jewel on forehead -->
+    <circle cx="512" cy="168" r="22" fill="url(#jewelC)" stroke="#1A1332" stroke-width="3"/>
+    <ellipse cx="505" cy="162" rx="7" ry="5" fill="#FFF7DC" opacity="0.9"/>
+  </g>
+
+  <!-- RIGHT HEAD (mirror of left) -->
+  <g transform="translate(6 0)">
+    <path d="M 624 220 Q 704 160 794 225 Q 776 302 704 320 Q 632 302 624 220 Z"
+          fill="url(#hoodRightC)" stroke="#1A1332" stroke-width="3"/>
+    <path d="M 646 228 Q 704 180 770 230 Q 756 294 704 308 Q 654 294 646 228 Z"
+          fill="#D4C6FD"/>
+    <g fill="#F5B642">
+      <circle cx="704" cy="220" r="3"/>
+      <circle cx="684" cy="245" r="2.5"/>
+      <circle cx="724" cy="245" r="2.5"/>
+      <circle cx="672" cy="275" r="2"/>
+      <circle cx="736" cy="275" r="2"/>
+    </g>
+    <path d="M 660 238 Q 704 195 748 238 Q 744 292 704 308 Q 664 292 660 238 Z"
+          fill="#A78BFA" stroke="#1A1332" stroke-width="2.5"/>
+    <circle cx="686" cy="248" r="6" fill="#1A1332"/>
+    <circle cx="722" cy="248" r="6" fill="#1A1332"/>
+    <circle cx="688" cy="246" r="2" fill="#FFF7DC"/>
+    <circle cx="724" cy="246" r="2" fill="#FFF7DC"/>
+    <path d="M 704 310 L 700 328 M 704 310 L 708 328" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Small orchestration node indicators along necks -->
+  <g fill="#38BDF8" opacity="0.8">
+    <circle cx="420" cy="290" r="4"/>
+    <circle cx="604" cy="290" r="4"/>
+    <circle cx="512" cy="295" r="4"/>
+  </g>
+</svg>
