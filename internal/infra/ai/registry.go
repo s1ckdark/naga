@@ -72,3 +72,9 @@ func (r *Registry) EstimateCapacity(ctx context.Context, worker WorkerSnapshot, 
 	}
 	return nil, nil
 }
+
+// TaskSchedulerProvider returns the configured task scheduler or nil.
+// Callers that want fallback-aware routing should use ScheduleTask directly.
+func (r *Registry) TaskSchedulerProvider() TaskScheduler {
+	return r.taskScheduler
+}
