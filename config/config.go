@@ -107,11 +107,17 @@ type ProviderConfig struct {
 
 // AIConfig routes AI calls to providers per role.
 // Default applies to any role without a non-empty override.
+//
+// AlwaysConsult promotes the AI from a tiebreaker to the primary scheduler:
+// when true, every task assignment goes through the AI provider (subject to
+// aiCallBudget), not just rule-based ties. Per-task `aiSchedule` overrides
+// this default both ways.
 type AIConfig struct {
 	Default            ProviderConfig  `mapstructure:"default"`
 	HeadSelection      *ProviderConfig `mapstructure:"head_selection"`
 	TaskScheduling     *ProviderConfig `mapstructure:"task_scheduling"`
 	CapacityEstimation *ProviderConfig `mapstructure:"capacity_estimation"`
+	AlwaysConsult      bool            `mapstructure:"always_consult"`
 }
 
 // Resolve returns the ProviderConfig for a given role, falling back to Default
@@ -293,6 +299,7 @@ func Save(cfg *Config) error {
 	setRoleOverride("agent.ai.head_selection", cfg.Agent.AI.HeadSelection)
 	setRoleOverride("agent.ai.task_scheduling", cfg.Agent.AI.TaskScheduling)
 	setRoleOverride("agent.ai.capacity_estimation", cfg.Agent.AI.CapacityEstimation)
+	viper.Set("agent.ai.always_consult", cfg.Agent.AI.AlwaysConsult)
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	return viper.WriteConfigAs(configPath)

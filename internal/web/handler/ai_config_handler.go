@@ -28,11 +28,17 @@ func (p providerConfigJSON) toConfig() config.ProviderConfig {
 }
 
 // AIConfigRequest is the payload for updating AI provider configuration.
+//
+// AlwaysConsult promotes the AI to the primary scheduler (every task
+// goes through the AI provider, subject to per-tick budget) instead of a
+// rule-based tiebreaker. Per-task `aiSchedule` overrides this default both
+// ways. Defaults to false when omitted from the JSON body.
 type AIConfigRequest struct {
 	Default            providerConfigJSON  `json:"default"`
 	HeadSelection      *providerConfigJSON `json:"head_selection,omitempty"`
 	TaskScheduling     *providerConfigJSON `json:"task_scheduling,omitempty"`
 	CapacityEstimation *providerConfigJSON `json:"capacity_estimation,omitempty"`
+	AlwaysConsult      bool                `json:"always_consult"`
 }
 
 // APIGetAIConfig returns the current AI configuration with API keys masked.
@@ -43,6 +49,7 @@ func (h *Handler) APIGetAIConfig(c echo.Context) error {
 		"head_selection":      maskedProviderPtr(ai.HeadSelection),
 		"task_scheduling":     maskedProviderPtr(ai.TaskScheduling),
 		"capacity_estimation": maskedProviderPtr(ai.CapacityEstimation),
+		"always_consult":      ai.AlwaysConsult,
 	})
 }
 
@@ -76,7 +83,8 @@ func (h *Handler) APIPutAIConfig(c echo.Context) error {
 	}
 
 	newAI := config.AIConfig{
-		Default: req.Default.toConfig(),
+		Default:       req.Default.toConfig(),
+		AlwaysConsult: req.AlwaysConsult,
 	}
 	if req.HeadSelection != nil {
 		pc := req.HeadSelection.toConfig()
@@ -96,6 +104,14 @@ func (h *Handler) APIPutAIConfig(c echo.Context) error {
 	if err := config.Save(h.cfg); err != nil {
 		return internalError(c, "failed to save config", err)
 	}
+
+	// Propagate the always_consult flag to the running supervisor so flips
+	// take effect without requiring a server restart. Per-task aiSchedule
+	// continues to override.
+	if h.taskSupervisor != nil {
+		h.taskSupervisor.SetAlwaysConsultAI(newAI.AlwaysConsult)
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})
 }
 

@@ -213,3 +213,77 @@ func TestScheduleWithTiebreak_RejectsUnknownDeviceFromArbiter(t *testing.T) {
 		t.Fatalf("expected a tied candidate, got %+v", got)
 	}
 }
+
+func TestScheduleAlways_CallsArbiterEvenWithClearWinner(t *testing.T) {
+	strong := fullyLoaded("strong")
+	weak := fullyLoaded("weak")
+	weak.GPUUtilization = 90
+	weak.MemoryFreeGB = 2
+	weak.CPUUsage = 80
+	arb := &fakeArbiter{decisionDeviceID: "weak"}
+	task := &domain.Task{Priority: domain.TaskPriorityNormal}
+
+	got := ScheduleAlways(context.Background(), task, []WorkerSnapshot{strong, weak}, arb, time.Second)
+	if got == nil || got.DeviceID != "weak" {
+		t.Fatalf("expected arbiter pick to win even without tie, got %+v", got)
+	}
+	if arb.called != 1 {
+		t.Fatalf("arbiter should be called once, got %d", arb.called)
+	}
+}
+
+func TestScheduleAlways_FallsBackOnArbiterError(t *testing.T) {
+	a := fullyLoaded("a")
+	b := fullyLoaded("b")
+	b.GPUUtilization = 60 // weaker than a, so a is rule-based top
+	arb := &fakeArbiter{err: errors.New("boom")}
+	task := &domain.Task{Priority: domain.TaskPriorityNormal}
+
+	got := ScheduleAlways(context.Background(), task, []WorkerSnapshot{a, b}, arb, time.Second)
+	if got == nil || got.DeviceID != "a" {
+		t.Fatalf("expected rule-based top 'a' on arbiter error, got %+v", got)
+	}
+}
+
+func TestScheduleAlways_NilArbiterReturnsTop(t *testing.T) {
+	a := fullyLoaded("a")
+	b := fullyLoaded("b")
+	b.GPUUtilization = 60
+	task := &domain.Task{Priority: domain.TaskPriorityNormal}
+
+	got := ScheduleAlways(context.Background(), task, []WorkerSnapshot{a, b}, nil, time.Second)
+	if got == nil || got.DeviceID != "a" {
+		t.Fatalf("expected rule-based top with nil arbiter, got %+v", got)
+	}
+}
+
+func TestScheduleAlways_NoEligibleReturnsNil(t *testing.T) {
+	w := fullyLoaded("w")
+	w.Capabilities = []string{"cpu"} // no gpu
+	arb := &fakeArbiter{decisionDeviceID: "w"}
+	task := &domain.Task{
+		Priority:             domain.TaskPriorityNormal,
+		RequiredCapabilities: []string{"gpu"},
+	}
+
+	got := ScheduleAlways(context.Background(), task, []WorkerSnapshot{w}, arb, time.Second)
+	if got != nil {
+		t.Fatalf("expected nil when no worker matches capabilities, got %+v", got)
+	}
+	if arb.called != 0 {
+		t.Fatalf("arbiter should not be called when no eligible workers, got %d", arb.called)
+	}
+}
+
+func TestScheduleAlways_RejectsUnknownDeviceFromArbiter(t *testing.T) {
+	a := fullyLoaded("a")
+	b := fullyLoaded("b")
+	b.GPUUtilization = 60
+	arb := &fakeArbiter{decisionDeviceID: "phantom"}
+	task := &domain.Task{Priority: domain.TaskPriorityNormal}
+
+	got := ScheduleAlways(context.Background(), task, []WorkerSnapshot{a, b}, arb, time.Second)
+	if got == nil || got.DeviceID != "a" {
+		t.Fatalf("expected fallback to top 'a' for unknown arbiter pick, got %+v", got)
+	}
+}

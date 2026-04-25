@@ -193,6 +193,65 @@ func ScheduleWithTiebreak(
 	return &top
 }
 
+// ScheduleAlways always asks the arbiter (AI provider) to pick from every
+// eligible worker, not just the rule-based top tier. This is the path used
+// when AlwaysConsult is enabled in config or per-task. Falls back to the
+// highest-scoring rule-based candidate on arbiter error, nil arbiter, or
+// an unrecognised decision. timeout caps the arbiter call; 0 disables it.
+func ScheduleAlways(
+	ctx context.Context,
+	task *domain.Task,
+	workers []WorkerSnapshot,
+	arbiter TaskScheduler,
+	timeout time.Duration,
+) *WorkerSnapshot {
+	type scoredWorker struct {
+		w WorkerSnapshot
+		s float64
+	}
+	scored := make([]scoredWorker, 0, len(workers))
+	for _, w := range workers {
+		s := ScoreForTask(task, w)
+		if s <= ineligible {
+			continue
+		}
+		scored = append(scored, scoredWorker{w, s})
+	}
+	if len(scored) == 0 {
+		return nil
+	}
+	sort.Slice(scored, func(i, j int) bool { return scored[i].s > scored[j].s })
+
+	if len(scored) == 1 || arbiter == nil {
+		top := scored[0].w
+		return &top
+	}
+
+	candidates := make([]WorkerSnapshot, 0, len(scored))
+	for _, s := range scored {
+		candidates = append(candidates, s.w)
+	}
+
+	callCtx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	decision, err := arbiter.ScheduleTask(callCtx, task, candidates)
+	if err != nil || decision == nil || decision.DeviceID == "" {
+		top := scored[0].w
+		return &top
+	}
+	for i := range candidates {
+		if candidates[i].DeviceID == decision.DeviceID {
+			return &candidates[i]
+		}
+	}
+	top := scored[0].w
+	return &top
+}
+
 func hasAllCapabilities(have, need []string) bool {
 	if len(need) == 0 {
 		return true

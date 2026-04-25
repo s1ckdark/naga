@@ -62,6 +62,7 @@ func (h *Handler) APITaskCreate(c echo.Context) error {
 		Payload              map[string]interface{} `json:"payload"`
 		Timeout              int                    `json:"timeout"` // seconds
 		MaxRetries           int                    `json:"maxRetries"`
+		AISchedule           *bool                  `json:"aiSchedule"` // override server-wide AlwaysConsult for this task
 	}
 
 	if err := c.Bind(&req); err != nil {
@@ -82,6 +83,7 @@ func (h *Handler) APITaskCreate(c echo.Context) error {
 		Payload:              req.Payload,
 		Timeout:              time.Duration(req.Timeout) * time.Second,
 		MaxRetries:           req.MaxRetries,
+		AISchedule:           req.AISchedule,
 	}
 
 	if task.Priority == "" {

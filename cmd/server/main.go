@@ -158,6 +158,10 @@ func main() {
 		taskSupervisor.SetAIArbiter(arbiter, 0.10, 5, 3*time.Second)
 		log.Printf("[supervisor] AI tiebreaker enabled (provider=%s, epsilon=0.10, budget=5/tick, timeout=3s)", cfg.Agent.AI.Resolve("schedule").Provider)
 	}
+	if cfg.Agent.AI.AlwaysConsult {
+		taskSupervisor.SetAlwaysConsultAI(true)
+		log.Printf("[supervisor] AI promoted to primary scheduler (always_consult=true); per-task aiSchedule still wins")
+	}
 	h.SetTaskSupervisor(taskSupervisor)
 	go taskSupervisor.Start(monitorCtx)
 	h.SetExecutor(sshExecutor)
