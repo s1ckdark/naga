@@ -126,3 +126,56 @@ func TestAIConfig_Resolve_EmptyOverrideFallsThrough(t *testing.T) {
 		t.Errorf("Resolve should ignore empty-Provider override; got %+v", got)
 	}
 }
+
+func TestMigrateLegacyAgentAI_ClaudeKey(t *testing.T) {
+	agent := AgentConfig{
+		AIProvider:      "claude",
+		AnthropicAPIKey: "sk-ant-legacy",
+	}
+	migrateLegacyAgentAI(&agent)
+	if agent.AI.Default.Provider != "claude" {
+		t.Errorf("AI.Default.Provider = %q; want claude", agent.AI.Default.Provider)
+	}
+	if agent.AI.Default.APIKey != "sk-ant-legacy" {
+		t.Errorf("AI.Default.APIKey = %q; want sk-ant-legacy", agent.AI.Default.APIKey)
+	}
+}
+
+func TestMigrateLegacyAgentAI_OpenAIReusesKey(t *testing.T) {
+	agent := AgentConfig{
+		AIProvider:      "openai",
+		AnthropicAPIKey: "sk-openai-legacy",
+	}
+	migrateLegacyAgentAI(&agent)
+	if agent.AI.Default.Provider != "openai" || agent.AI.Default.APIKey != "sk-openai-legacy" {
+		t.Errorf("openai legacy migration failed: %+v", agent.AI.Default)
+	}
+}
+
+func TestMigrateLegacyAgentAI_OllamaEndpoint(t *testing.T) {
+	agent := AgentConfig{
+		AIProvider:     "ollama",
+		OllamaEndpoint: "http://localhost:11434",
+		OllamaModel:    "llama3",
+	}
+	migrateLegacyAgentAI(&agent)
+	if agent.AI.Default.Provider != "ollama" ||
+		agent.AI.Default.Endpoint != "http://localhost:11434" ||
+		agent.AI.Default.Model != "llama3" {
+		t.Errorf("ollama legacy migration failed: %+v", agent.AI.Default)
+	}
+}
+
+func TestMigrateLegacyAgentAI_SkipsWhenAIDefaultPresent(t *testing.T) {
+	agent := AgentConfig{
+		AIProvider:      "claude",
+		AnthropicAPIKey: "sk-legacy",
+		AI: AIConfig{
+			Default: ProviderConfig{Provider: "openai", APIKey: "sk-new"},
+		},
+	}
+	migrateLegacyAgentAI(&agent)
+	if agent.AI.Default.Provider != "openai" {
+		t.Errorf("migration overwrote existing AI.Default: %+v", agent.AI.Default)
+	}
+}

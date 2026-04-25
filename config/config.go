@@ -81,17 +81,18 @@ type LogConfig struct {
 
 // AgentConfig holds agent settings
 type AgentConfig struct {
-	HeartbeatInterval   int    `mapstructure:"heartbeat_interval"`
-	HealthCheckInterval int    `mapstructure:"healthcheck_interval"`
-	FailureTimeout      int    `mapstructure:"failure_timeout"`
-	CheckpointDir       string `mapstructure:"checkpoint_dir"`
-	AnthropicAPIKey     string `mapstructure:"anthropic_api_key"`
-	AgentPort           int    `mapstructure:"agent_port"`
-	AIProvider          string `mapstructure:"ai_provider"`       // "claude", "ollama", "lmstudio", "openai"
-	OllamaEndpoint      string `mapstructure:"ollama_endpoint"`
-	OllamaModel         string `mapstructure:"ollama_model"`
-	LMStudioEndpoint    string `mapstructure:"lmstudio_endpoint"`
-	LMStudioModel       string `mapstructure:"lmstudio_model"`
+	HeartbeatInterval   int      `mapstructure:"heartbeat_interval"`
+	HealthCheckInterval int      `mapstructure:"healthcheck_interval"`
+	FailureTimeout      int      `mapstructure:"failure_timeout"`
+	CheckpointDir       string   `mapstructure:"checkpoint_dir"`
+	AnthropicAPIKey     string   `mapstructure:"anthropic_api_key"` // deprecated: use AI.Default
+	AgentPort           int      `mapstructure:"agent_port"`
+	AIProvider          string   `mapstructure:"ai_provider"`       // deprecated: use AI.Default.Provider
+	OllamaEndpoint      string   `mapstructure:"ollama_endpoint"`   // deprecated: use AI.Default.Endpoint
+	OllamaModel         string   `mapstructure:"ollama_model"`      // deprecated: use AI.Default.Model
+	LMStudioEndpoint    string   `mapstructure:"lmstudio_endpoint"` // deprecated: use AI.Default.Endpoint
+	LMStudioModel       string   `mapstructure:"lmstudio_model"`    // deprecated: use AI.Default.Model
+	AI                  AIConfig `mapstructure:"ai"`
 }
 
 // ProviderConfig describes one AI provider instance.
@@ -130,6 +131,33 @@ func (a AIConfig) Resolve(role string) ProviderConfig {
 		return *override
 	}
 	return a.Default
+}
+
+// migrateLegacyAgentAI copies deprecated single-provider fields into the new
+// AIConfig.Default structure. No-op when AI.Default.Provider is already set.
+func migrateLegacyAgentAI(agent *AgentConfig) {
+	if agent.AI.Default.Provider != "" {
+		return
+	}
+	switch agent.AIProvider {
+	case "claude":
+		agent.AI.Default = ProviderConfig{Provider: "claude", APIKey: agent.AnthropicAPIKey}
+	case "openai":
+		// Legacy code reused AnthropicAPIKey as OpenAI key; preserve that quirk.
+		agent.AI.Default = ProviderConfig{Provider: "openai", APIKey: agent.AnthropicAPIKey}
+	case "ollama":
+		agent.AI.Default = ProviderConfig{
+			Provider: "ollama",
+			Endpoint: agent.OllamaEndpoint,
+			Model:    agent.OllamaModel,
+		}
+	case "lmstudio":
+		agent.AI.Default = ProviderConfig{
+			Provider: "lmstudio",
+			Endpoint: agent.LMStudioEndpoint,
+			Model:    agent.LMStudioModel,
+		}
+	}
 }
 
 // DefaultConfig returns a Config with default values
@@ -211,6 +239,8 @@ func Load() (*Config, error) {
 	if err := viper.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+
+	migrateLegacyAgentAI(&cfg.Agent)
 
 	return cfg, nil
 }
