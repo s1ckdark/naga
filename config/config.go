@@ -108,9 +108,9 @@ type ProviderConfig struct {
 // Default applies to any role without a non-empty override.
 type AIConfig struct {
 	Default            ProviderConfig  `mapstructure:"default"`
-	HeadSelection      *ProviderConfig `mapstructure:"head_selection,omitempty"`
-	TaskScheduling     *ProviderConfig `mapstructure:"task_scheduling,omitempty"`
-	CapacityEstimation *ProviderConfig `mapstructure:"capacity_estimation,omitempty"`
+	HeadSelection      *ProviderConfig `mapstructure:"head_selection"`
+	TaskScheduling     *ProviderConfig `mapstructure:"task_scheduling"`
+	CapacityEstimation *ProviderConfig `mapstructure:"capacity_estimation"`
 }
 
 // Resolve returns the ProviderConfig for a given role, falling back to Default
