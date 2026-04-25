@@ -47,14 +47,15 @@ func internalError(c echo.Context, msg string, err error) error {
 
 // Handler handles HTTP requests
 type Handler struct {
-	deviceUC   *usecase.DeviceUseCase
-	orchUC  *usecase.OrchUseCase
-	monitorUC  *usecase.MonitorUseCase
-	failoverUC *usecase.FailoverUseCase
-	executor   RemoteExecutor
-	cfg        *config.Config
-	wsHub      *ws.Hub
-	taskQueue  *domain.TaskQueue
+	deviceUC       *usecase.DeviceUseCase
+	orchUC         *usecase.OrchUseCase
+	monitorUC      *usecase.MonitorUseCase
+	failoverUC     *usecase.FailoverUseCase
+	executor       RemoteExecutor
+	cfg            *config.Config
+	wsHub          *ws.Hub
+	taskQueue      *domain.TaskQueue
+	taskSupervisor *usecase.TaskSupervisor
 }
 
 // NewHandler creates a new Handler
@@ -87,6 +88,13 @@ func (h *Handler) SetWebSocketHub(hub *ws.Hub) {
 // SetTaskQueue sets the task queue
 func (h *Handler) SetTaskQueue(queue *domain.TaskQueue) {
 	h.taskQueue = queue
+}
+
+// SetTaskSupervisor wires the task supervisor so APITaskCreate can route
+// freshly enqueued tasks through the AI-aware scheduler instead of the
+// legacy immediate-assign path.
+func (h *Handler) SetTaskSupervisor(s *usecase.TaskSupervisor) {
+	h.taskSupervisor = s
 }
 
 // Dashboard renders the main dashboard

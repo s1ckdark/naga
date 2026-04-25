@@ -3,7 +3,6 @@ package handler
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -91,30 +90,20 @@ func (h *Handler) APITaskCreate(c echo.Context) error {
 
 	h.taskQueue.Enqueue(task)
 
-	// Try to assign immediately if a matching device is connected via WebSocket
-	if h.wsHub != nil {
-		for _, connDeviceID := range h.wsHub.ConnectedDevices() {
-			if h.deviceUC != nil {
-				ctx := c.Request().Context()
-				dev, err := h.deviceUC.GetDevice(ctx, connDeviceID)
-				if err == nil {
-					matched := h.taskQueue.FindMatchingTask(dev)
-					if matched != nil && matched.ID == task.ID {
-						// Send task to device via WebSocket
-						payload, _ := json.Marshal(matched)
-						msg := &ws.Message{
-							Type:      ws.MsgTaskAssign,
-							DeviceID:  connDeviceID,
-							TaskID:    matched.ID,
-							Payload:   payload,
-							Timestamp: time.Now(),
-						}
-						h.wsHub.SendToDevice(connDeviceID, msg)
-						break
-					}
-				}
-			}
-		}
+	// Run one scheduling pass immediately so we don't wait up to a tick
+	// interval for the supervisor to pick this task up. The supervisor's
+	// scheduleQueue is the single source of scheduling truth — capability
+	// matching, metric-based scoring, and AI tiebreaking — so all task
+	// assignments share the same code path whether they arrive via POST
+	// or are leftovers from a previous tick.
+	if h.taskSupervisor != nil {
+		h.taskSupervisor.ScheduleNow(c.Request().Context())
+	}
+
+	// Refresh the task from the queue: ScheduleNow may have moved it from
+	// queued to assigned, and we want the response to reflect that.
+	if updated := h.taskQueue.Get(task.ID); updated != nil {
+		task = updated
 	}
 
 	return c.JSON(http.StatusCreated, task)

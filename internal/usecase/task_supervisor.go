@@ -55,6 +55,17 @@ func (s *TaskSupervisor) SetAIArbiter(arbiter ai.TaskScheduler, epsilon float64,
 	s.aiCallTimeout = timeout
 }
 
+// ScheduleNow runs one scheduling pass immediately, outside the periodic
+// ticker. Callers (e.g. the POST /api/tasks handler) use this to push a
+// freshly enqueued task through the same AI-aware path the supervisor uses
+// during its tick, instead of bypassing it with a separate immediate-assign
+// codepath. Locks the same mutex as the periodic check.
+func (s *TaskSupervisor) ScheduleNow(ctx context.Context) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.scheduleQueue(ctx)
+}
+
 // Start begins the supervision loop
 func (s *TaskSupervisor) Start(ctx context.Context) {
 	log.Println("[supervisor] task supervisor started")
@@ -138,13 +149,24 @@ func (s *TaskSupervisor) scheduleQueue(ctx context.Context) {
 	}
 
 	aiCallsRemaining := s.aiCallBudget
-	for _, task := range s.taskQueue.ListQueuedByPriority() {
+	queued := s.taskQueue.ListQueuedByPriority()
+	if len(queued) > 0 {
+		log.Printf("[supervisor] tick: queued=%d snapshots=%d aiBudget=%d", len(queued), len(snaps), aiCallsRemaining)
+	}
+	for _, task := range queued {
 		var best *ai.WorkerSnapshot
 		if s.aiArbiter != nil && aiCallsRemaining > 0 {
 			tied := ai.PickTopKEligible(task, snaps, 5, s.tiebreakEpsilon)
+			log.Printf("[supervisor] task %s eligible=%d", task.ID, len(tied))
 			if len(tied) > 1 {
+				log.Printf("[supervisor] task %s tied=%d -> calling AI tiebreaker", task.ID, len(tied))
 				best = ai.ScheduleWithTiebreak(ctx, task, snaps, s.aiArbiter, s.tiebreakEpsilon, s.aiCallTimeout)
 				aiCallsRemaining--
+				if best != nil {
+					log.Printf("[supervisor] task %s AI picked %s", task.ID, best.DeviceID)
+				} else {
+					log.Printf("[supervisor] task %s AI returned nil (fallback)", task.ID)
+				}
 			} else if len(tied) == 1 {
 				w := tied[0]
 				best = &w
@@ -153,12 +175,14 @@ func (s *TaskSupervisor) scheduleQueue(ctx context.Context) {
 			best = ai.PickBestWorker(task, snaps)
 		}
 		if best == nil {
+			log.Printf("[supervisor] task %s: no worker selected", task.ID)
 			continue
 		}
 		assigned := s.taskQueue.AssignToDevice(task.ID, best.DeviceID)
 		if assigned == nil {
 			continue // raced: another pass claimed it
 		}
+		log.Printf("[supervisor] task %s assigned to %s", task.ID, best.DeviceID)
 		s.notifyDeviceOfTask(best.DeviceID, assigned)
 		bumpRunningJobs(snaps, best.DeviceID)
 	}
