@@ -207,3 +207,33 @@ func TestConfig_SaveAndLoad_AIConfig(t *testing.T) {
 		t.Errorf("TaskScheduling override not persisted: %+v", loaded.Agent.AI.TaskScheduling)
 	}
 }
+
+func TestConfig_SaveAndLoad_AIConfig_ClearsRoleOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("NAGA_CONFIG_DIR", tmpDir)
+
+	cfg := DefaultConfig()
+	cfg.Tailscale.APIKey = "tskey-clear"
+	override := ProviderConfig{Provider: "ollama", Endpoint: "http://localhost:11434"}
+	cfg.Agent.AI = AIConfig{
+		Default:        ProviderConfig{Provider: "claude", APIKey: "sk-default"},
+		TaskScheduling: &override,
+	}
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save 1: %v", err)
+	}
+
+	// Now transition TaskScheduling to nil and Save again in the same process.
+	cfg.Agent.AI.TaskScheduling = nil
+	if err := Save(cfg); err != nil {
+		t.Fatalf("Save 2: %v", err)
+	}
+
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Agent.AI.TaskScheduling != nil && loaded.Agent.AI.TaskScheduling.Provider != "" {
+		t.Errorf("TaskScheduling sub-keys not cleared on nil transition: %+v", loaded.Agent.AI.TaskScheduling)
+	}
+}

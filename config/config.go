@@ -208,6 +208,11 @@ func DefaultConfig() *Config {
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
+	// Reset the global viper instance so prior in-memory Set() calls from
+	// Save() do not bleed into this load (relevant when called multiple times
+	// within the same process, e.g. after Save transitions).
+	viper.Reset()
+
 	// Set config name and paths
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -251,6 +256,10 @@ func Save(cfg *Config) error {
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
+
+	// Reset global viper so no stale in-memory keys from a previous Save call
+	// within the same process can leak into the written YAML.
+	viper.Reset()
 
 	viper.Set("tailscale.api_key", cfg.Tailscale.APIKey)
 	viper.Set("tailscale.tailnet", cfg.Tailscale.Tailnet)
@@ -306,6 +315,12 @@ func GetConfigDir() string {
 // setRoleOverride sets a role-override block in viper, or clears it if nil.
 func setRoleOverride(key string, p *ProviderConfig) {
 	if p == nil {
+		// Explicitly clear nested keys; viper.Set(key, nil) alone does not
+		// shadow already-set sub-keys within the same process.
+		viper.Set(key+".provider", "")
+		viper.Set(key+".api_key", "")
+		viper.Set(key+".endpoint", "")
+		viper.Set(key+".model", "")
 		viper.Set(key, nil)
 		return
 	}
