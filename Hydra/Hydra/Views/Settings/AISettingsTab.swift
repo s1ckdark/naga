@@ -112,6 +112,16 @@ struct AISettingsTab: View {
             }
 
             Section {
+                DisclosureGroup("Advanced: per-role overrides", isExpanded: $showAdvanced) {
+                    RoleOverrideView(title: "Head Selection", role: "head")
+                    RoleOverrideView(title: "Task Scheduling", role: "schedule")
+                    RoleOverrideView(title: "Capacity Estimation", role: "capacity")
+                }
+            } header: {
+                Text("③ Advanced (optional)")
+            }
+
+            Section {
                 HStack {
                     Button("Save Locally") { saveLocally() }
                         .disabled(!connectionVerified)
@@ -150,7 +160,7 @@ struct AISettingsTab: View {
                     }
                 }
             } header: {
-                Text("③ Save")
+                Text("④ Save")
             }
         }
         .formStyle(.grouped)
@@ -290,6 +300,68 @@ private extension Optional where Wrapped == AISettingsTab.SaveStatus {
     var isSaving: Bool {
         if case .saving = self { return true }
         return false
+    }
+}
+
+private struct RoleOverrideView: View {
+    let title: String
+    let role: String
+
+    @AppStorage private var useDefault: Bool
+    @AppStorage private var provider: String
+    @AppStorage private var endpoint: String
+    @AppStorage private var model: String
+
+    init(title: String, role: String) {
+        self.title = title
+        self.role = role
+        self._useDefault = AppStorage(wrappedValue: true, "aiRole_\(role)_useDefault")
+        self._provider   = AppStorage(wrappedValue: "",   "aiRole_\(role)_provider")
+        self._endpoint   = AppStorage(wrappedValue: "",   "aiRole_\(role)_endpoint")
+        self._model      = AppStorage(wrappedValue: "",   "aiRole_\(role)_model")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(title, isOn: Binding(
+                get: { useDefault },
+                set: { useDefault = $0 }
+            ))
+            .toggleStyle(.switch)
+            .font(.headline)
+
+            if !useDefault {
+                HStack {
+                    Text("Provider")
+                    Spacer()
+                    TextField("claude, openai, ollama…", text: $provider)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+                HStack {
+                    Text("Endpoint / Key")
+                    Spacer()
+                    SecureField("api key or endpoint URL", text: $endpoint)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+                HStack {
+                    Text("Model")
+                    Spacer()
+                    TextField("(optional)", text: $model)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: 220)
+                }
+                Text("Overrides are stored locally. Push to server to apply.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Uses the default provider above.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 #endif
