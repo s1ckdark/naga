@@ -11,32 +11,65 @@ import (
 	"github.com/s1ckdark/hydra/internal/infra/ai/openai"
 )
 
-// buildAITaskScheduler returns a configured ai.TaskScheduler based on the
-// Agent config. Returns nil when no provider is requested or when the
-// selected provider is missing required credentials — callers treat nil as
-// "no AI tiebreaker configured".
-func buildAITaskScheduler(cfg config.AgentConfig) ai.TaskScheduler {
-	switch cfg.AIProvider {
+// buildAIRegistry wires role-specific providers from the resolved AIConfig.
+// Unsupported (provider,role) combinations fall through to the Registry's
+// rule-based fallback.
+func buildAIRegistry(aicfg config.AIConfig) *ai.Registry {
+	reg := ai.NewRegistry(ai.Config{})
+	if hs := buildHeadSelector(aicfg.Resolve("head")); hs != nil {
+		reg.SetHeadSelector(hs)
+	}
+	if ts := buildTaskScheduler(aicfg.Resolve("schedule")); ts != nil {
+		reg.SetTaskScheduler(ts)
+	}
+	// CapacityEstimator: no concrete provider implements it yet; left nil by design.
+	return reg
+}
+
+// buildTaskScheduler returns an ai.TaskScheduler for the given provider config,
+// or nil when credentials/endpoint are missing or the provider is unknown.
+func buildTaskScheduler(p config.ProviderConfig) ai.TaskScheduler {
+	switch p.Provider {
 	case "":
 		return nil
 	case "claude":
-		if cfg.AnthropicAPIKey == "" {
-			log.Println("[ai] claude selected but anthropic_api_key is empty; AI tiebreaker disabled")
+		if p.APIKey == "" {
+			log.Println("[ai] claude task-scheduler: empty api_key; disabled")
 			return nil
 		}
-		return claude.NewProvider(cfg.AnthropicAPIKey, "")
+		return claude.NewProvider(p.APIKey, p.Model)
 	case "openai":
-		if cfg.AnthropicAPIKey == "" {
-			log.Println("[ai] openai selected but anthropic_api_key is empty (reused as OpenAI key); AI tiebreaker disabled")
+		if p.APIKey == "" {
+			log.Println("[ai] openai task-scheduler: empty api_key; disabled")
 			return nil
 		}
-		return openai.NewProvider(cfg.AnthropicAPIKey, "")
+		return openai.NewProvider(p.APIKey, p.Model)
 	case "ollama":
-		return ollama.NewProvider(cfg.OllamaEndpoint, cfg.OllamaModel)
+		if p.Endpoint == "" {
+			log.Println("[ai] ollama task-scheduler: empty endpoint; disabled")
+			return nil
+		}
+		return ollama.NewProvider(p.Endpoint, p.Model)
 	case "lmstudio":
-		return lmstudio.NewProvider(cfg.LMStudioEndpoint, cfg.LMStudioModel)
+		if p.Endpoint == "" {
+			log.Println("[ai] lmstudio task-scheduler: empty endpoint; disabled")
+			return nil
+		}
+		return lmstudio.NewProvider(p.Endpoint, p.Model)
 	default:
-		log.Printf("[ai] unknown ai_provider %q; AI tiebreaker disabled", cfg.AIProvider)
+		log.Printf("[ai] unknown provider %q for task scheduler; disabled", p.Provider)
 		return nil
 	}
+}
+
+// buildHeadSelector returns an ai.HeadSelector for the given provider config,
+// or nil when the provider does not support head selection.
+func buildHeadSelector(p config.ProviderConfig) ai.HeadSelector {
+	if p.Provider != "claude" {
+		return nil
+	}
+	if p.APIKey == "" {
+		return nil
+	}
+	return claude.NewProvider(p.APIKey, p.Model)
 }
