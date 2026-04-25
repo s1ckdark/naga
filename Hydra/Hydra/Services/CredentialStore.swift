@@ -15,6 +15,10 @@ final class CredentialStore {
         case tailscaleAPIKey = "tailscale_api_key"
         case tailscaleOAuthClientID = "tailscale_oauth_client_id"
         case tailscaleOAuthClientSecret = "tailscale_oauth_client_secret"
+        case aiDefaultAPIKey = "ai_default_api_key"
+        case aiHeadAPIKey = "ai_head_api_key"
+        case aiScheduleAPIKey = "ai_schedule_api_key"
+        case aiCapacityAPIKey = "ai_capacity_api_key"
     }
 
     // MARK: - Public API
