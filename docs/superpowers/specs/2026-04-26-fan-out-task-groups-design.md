@@ -6,6 +6,10 @@ Hydra's task system today is one-task-at-a-time: every `POST /api/tasks` produce
 
 This design adds a parallel-batch primitive: clients submit N tasks as one request, the server returns a single `groupId`, the supervisor distributes the tasks across capable workers, and clients poll one endpoint to see aggregate progress and a final status. Sharded inference (C-α) and DAG workflows (C-γ) are explicitly **not** in scope — those are separate features with different data models. This spec covers only the C-β path.
 
+### Pre-existing limitation this spec addresses
+
+Tasks today live only in the in-memory `domain.TaskQueue` — there is no `tasks` table in SQLite. That makes operational debugging painful (after a server restart there is no record of what happened) and makes a hybrid-persisted group model impossible without persisting tasks too. This spec therefore introduces a `tasks` table alongside the new `task_groups` table and routes every TaskQueue mutation through a write-through repository. Restart-time queue hydration (re-enqueueing rows that were `queued`/`running` at boot) is intentionally left to a follow-up: this PR makes the data inspectable and durable, but does not yet rebuild the in-memory queue from disk.
+
 ## Goals
 
 - Submit N independent tasks in one HTTP call; receive a single `groupId`.
@@ -13,6 +17,7 @@ This design adds a parallel-batch primitive: clients submit N tasks as one reque
 - Surface a tri-state outcome (`completed` / `partial` / `failed`) so 99/100-success cases are distinguishable from a total failure.
 - Reuse the existing capability filter, rule-based scorer, and AI scheduler — no fork in the scheduling path.
 - Strict additive: existing single-task POST continues to work unchanged.
+- Persist tasks and groups to SQLite so operators can inspect/debug/repair state with plain SQL — no more "everything is in memory and gone after restart."
 
 ## Non-Goals
 
@@ -24,53 +29,91 @@ This design adds a parallel-batch primitive: clients submit N tasks as one reque
 - A `GET /api/groups` list endpoint — usable backlog item once a UI exists, but not for v1.
 - Group-level scheduling priority — per-task `priority` already covers this.
 - Per-group AI scheduling override — per-task `aiSchedule` already exists; clients that want a uniform policy set it on every task in the batch.
+- **Restart-time queue hydration** — DB rows survive a restart, but the in-memory `TaskQueue` is rebuilt empty. Tasks left as `queued`/`assigned`/`running` at the time of the crash become orphans in the DB; the operator inspects them via SQL but the supervisor does not automatically retry them. Adding hydration is a focused follow-up that depends on worker-side cancel/abandon semantics that are not yet defined.
+- **Task archiving / pruning** — once written, task and group rows stay forever. A retention policy is a separate concern.
 
 ## Architecture overview
 
 ```
                                                          ┌─────────────────┐
  Client ── POST /api/tasks/batch ──┐                    │  task_groups    │
-                                   │                    │  (hybrid)       │
-                                   ▼                    ├─────────────────┤
-                          ┌────────────────┐  group_id  │ id, name        │
-                          │ APITaskBatch-  │◀───────────│ created_at      │
-                          │ Create         │            │ created_by      │
-                          └────────────────┘            │ total_tasks     │
-                                   │                    │ metadata JSON   │
-                                   │ Enqueue N tasks    └─────────────────┘
-                                   │ + groupId on each          ▲
+                                   │                    ├─────────────────┤
+                                   ▼                    │ id, name        │
+                          ┌────────────────┐            │ created_at      │
+                          │ APITaskBatch-  │ tx insert  │ created_by      │
+                          │ Create         │───────────▶│ total_tasks     │
+                          └────────────────┘            │ metadata JSON   │
+                                   │                    └─────────────────┘
+                                   │ Enqueue N tasks            ▲
                                    ▼                            │
                           ┌────────────────┐                    │ JOIN
-                          │  TaskQueue     │                    │
-                          │  (existing)    │                    │
-                          └────────────────┘                    │
-                                   │                            │
-                                   ▼                            │
-                          ┌────────────────┐                    │
-                          │ TaskSupervisor │                    │
-                          │ ScheduleNow x1 │                    │
-                          │ (existing)     │                    │
-                          └────────────────┘                    │
-                                                                │
- Client ── GET /api/groups/:id ◀───────────────────────────────┘
+                          │  TaskQueue     │ write-through      │
+                          │  (in-memory) ──┼────────────┐       │
+                          └────────────────┘            ▼       │
+                                   │            ┌─────────────┐ │
+                                   ▼            │  tasks      │ │
+                          ┌────────────────┐    │  (table)    │ │
+                          │ TaskSupervisor │    ├─────────────┤ │
+                          │ ScheduleNow x1 │───▶│ id, group_id│─┘
+                          │ (existing)     │    │ status, ... │
+                          └────────────────┘    └─────────────┘
+                                                       ▲
+                                                       │  SELECT
+ Client ── GET /api/groups/:id ──────────────────────┘
                                   status: running|completed|partial|failed
                                   totals: completed N, failed M, queued K, running R
                                   tasks[] (optional: ?detail=full)
 ```
 
-Two persistence shapes:
+Three persistence shapes:
 
-- **`task_groups` table** — one row per group, immutable identity (id, name, created_at, created_by, total_tasks, metadata). Survives task cleanup.
+- **`tasks` table** (NEW) — every task `domain.TaskQueue` mutation is mirrored here through a write-through `TaskRepository`. Status transitions, assignments, and result captures all UPDATE the row. Memory remains the working set; DB is durable shadow.
+- **`task_groups` table** (NEW) — one row per group, immutable identity (id, name, created_at, created_by, total_tasks, metadata). Survives task cleanup or queue eviction.
 - **`tasks.group_id` column** — every task either belongs to one group (FK) or stands alone (NULL).
 
 Aggregate group status is **derived** from member tasks at every read — there is no counter to drift out of sync. The `total_tasks` column is the only batch-level fact stored separately, kept immutable so partial completion stays meaningful even if individual task rows are later deleted.
+
+The in-memory `TaskQueue` continues to serve all in-flight operations (enqueue, dequeue, supervisor scheduling). The DB is a write-through audit/inspection layer; no read path under normal operation goes through the DB. The `GET /api/groups/:id` handler is the one exception — it reads `task_groups` and `tasks` from SQLite so that a group's full member list (including completed tasks the queue has already let go of) is accessible.
 
 ## Data model
 
 ### Migration
 
+Two new tables added to the inline migration list in `internal/repository/sqlite/sqlite.go::migrate()` (Hydra keeps schema as Go strings, not standalone `.sql` files; we follow the existing convention):
+
 ```sql
--- migrations/00X_task_groups.sql
+-- New: tasks table (mirrors domain.Task fields written by TaskQueue mutations)
+CREATE TABLE IF NOT EXISTS tasks (
+    id                     TEXT PRIMARY KEY,
+    parent_id              TEXT NOT NULL DEFAULT '',
+    orch_id                TEXT NOT NULL DEFAULT '',
+    type                   TEXT NOT NULL,
+    status                 TEXT NOT NULL,
+    priority               TEXT NOT NULL DEFAULT 'normal',
+    required_capabilities  TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    preferred_device_id    TEXT NOT NULL DEFAULT '',
+    assigned_device_id     TEXT NOT NULL DEFAULT '',
+    payload                TEXT NOT NULL DEFAULT '{}',  -- JSON object
+    result                 TEXT NOT NULL DEFAULT '',    -- JSON object, empty until set
+    error                  TEXT NOT NULL DEFAULT '',
+    created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    assigned_at            TIMESTAMP,
+    started_at             TIMESTAMP,
+    completed_at           TIMESTAMP,
+    timeout_ns             INTEGER NOT NULL DEFAULT 0,
+    retry_count            INTEGER NOT NULL DEFAULT 0,
+    max_retries            INTEGER NOT NULL DEFAULT 0,
+    created_by             TEXT NOT NULL DEFAULT '',
+    resource_reqs          TEXT NOT NULL DEFAULT '',    -- JSON object, empty when nil
+    blocked_device_ids     TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    ai_schedule            TEXT NOT NULL DEFAULT '',    -- '', 'true', 'false' for tri-state *bool
+    group_id               TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_status     ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_group_id   ON tasks(group_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
+
+-- New: task_groups table (hybrid: identity persisted, status derived)
 CREATE TABLE IF NOT EXISTS task_groups (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL DEFAULT '',
@@ -79,10 +122,9 @@ CREATE TABLE IF NOT EXISTS task_groups (
     total_tasks INTEGER NOT NULL,
     metadata    TEXT NOT NULL DEFAULT '{}'
 );
-
-ALTER TABLE tasks ADD COLUMN group_id TEXT REFERENCES task_groups(id);
-CREATE INDEX IF NOT EXISTS idx_tasks_group_id ON tasks(group_id);
 ```
+
+**Why a separate `group_id` text column with default `''` (not NULL FK)**: SQLite's `IF NOT EXISTS` table creation in our existing migration list is idempotent across server restarts; making `group_id` a real foreign key adds insertion-order constraints that complicate the migration (`task_groups` must be created before `tasks` and the constraint declaration is awkward in our inline string format). The constraint is enforced in code at write time (`tasks.group_id` is either `''` or matches a row in `task_groups`).
 
 ### Domain types — `internal/domain/task_group.go` (new file)
 
@@ -279,30 +321,71 @@ Group state always flows from tasks; there is no API or internal call that mutat
 | GET while a transition is mid-flight | Eventually consistent — next GET picks up the new status |
 | Tailscale auth missing | 403 (existing middleware) |
 | Very large batch (e.g. 10k tasks) | Accepted. Single SQLite transaction handles bulk INSERT well. Operational sizing is a follow-up. |
-| Task cleanup deletes some rows later | `total_tasks` stays as originally submitted. Status derivation treats missing rows as "still running" (`terminal < total`), which is the safest interpretation. |
+| Server restart with `running`/`assigned` tasks | DB rows survive. The in-memory queue is rebuilt empty on next boot, so those tasks become orphans — visible in SQL queries with their last known status, but never re-dispatched. Group GET still computes status from the persisted rows; a group with an orphan task stays `running` forever. Documented limitation; restart hydration is the unblock. |
+| `TaskRepository.Save` returns an error | Logged via `log.Printf("[taskqueue] persist failed: %v", err)`. The in-memory mutation is still applied so the scheduler keeps running. Operator inspects logs; eventual repair via SQL. |
+| Future task cleanup deletes rows | (Not in v1.) When a retention policy lands, `total_tasks` on the group stays as originally submitted; status derivation treats missing rows as "still running" (`terminal < total`), the safest interpretation. |
+
+## TaskQueue write-through
+
+The existing `domain.TaskQueue` is a pure in-memory structure with no awareness of persistence. Adding write-through cleanly:
+
+```go
+// internal/domain/taskqueue.go
+type TaskQueue struct {
+    // ...existing fields
+    repo TaskRepository    // optional: nil disables write-through (used by tests)
+}
+
+// TaskRepository is the persistence boundary for tasks. Defined here in
+// domain/ to avoid an import cycle with internal/repository.
+type TaskRepository interface {
+    Save(context.Context, *Task) error           // INSERT or UPDATE depending on existence
+    Delete(context.Context, string) error        // unused in v1; future cleanup hook
+}
+
+func (q *TaskQueue) WithRepo(r TaskRepository) *TaskQueue {
+    q.repo = r
+    return q
+}
+```
+
+Each existing mutation (`Enqueue`, `UpdateStatus`, `AssignToDevice`, `SetResult`, `CheckTimeouts`, `ReassignTasksFromDevice`) gains exactly one `_ = q.repo.Save(ctx, task)` line after its in-memory update. Errors are logged via `log.Printf` but do **not** roll back the in-memory mutation — DB downtime must not stall the scheduler. The same trade-off the rest of the codebase makes for write-through caches.
+
+The repository implementation in `internal/repository/sqlite/task.go` does the JSON marshalling for the JSON-shaped columns (`payload`, `result`, `required_capabilities`, `blocked_device_ids`, `resource_reqs`) and translates `Task.AISchedule *bool` into the `'' | 'true' | 'false'` text column.
+
+`cmd/server/main.go` wires it: after `taskQueue := domain.NewTaskQueue()`, call `taskQueue.WithRepo(repos.Tasks)`.
 
 ## Files touched
 
 ### New
 - `internal/domain/task_group.go` — types + `DeriveGroupStatus`
-- `internal/repository/repositories.go` — `TaskGroupRepo` interface
-- `internal/repository/sqlite/task_group.go` — Save/GetByID
+- `internal/domain/task_repository.go` — `TaskRepository` interface (in domain to avoid import cycle)
+- `internal/repository/repository.go` — `TaskGroupRepository` + `TaskRepository` interfaces (re-exported)
+- `internal/repository/sqlite/task.go` — `TaskRepository` Save/Delete
+- `internal/repository/sqlite/task_test.go` — round-trip tests
+- `internal/repository/sqlite/task_group.go` — `TaskGroupRepository` Save/GetByID/GetTasks
 - `internal/repository/sqlite/task_group_test.go`
 - `internal/web/handler/task_group_handler.go` — `APITaskBatchCreate`, `APIGetGroup`
 - `internal/web/handler/task_group_handler_test.go`
-- `migrations/<n>_task_groups.up.sql` and `<n>_task_groups.down.sql`
 
 ### Modified
 - `internal/domain/task.go` — `GroupID` field
-- `internal/repository/sqlite/task.go` — read/write `group_id` in existing CRUD
-- `cmd/server/main.go` — register two new routes
-- `internal/web/handler/task_handler.go` — include `groupId` in responses (1 line)
+- `internal/domain/taskqueue.go` — `repo` field + `WithRepo` + write-through call sites in 6 mutation methods
+- `internal/repository/repository.go` — `Repositories` struct gains `Tasks` and `TaskGroups`
+- `internal/repository/sqlite/sqlite.go` — append two new `CREATE TABLE` strings to the inline migration list; populate `Tasks`/`TaskGroups` in `Repositories()`; same in `Transaction` methods
+- `cmd/server/main.go` — register `POST /api/tasks/batch` + `GET /api/groups/:id`; wire `taskQueue.WithRepo(repos.Tasks)`
+- `internal/web/handler/task_handler.go` — include `groupId` in single-task POST response (1 line)
 
 ## Testing
 
 ### Unit
 - `TestDeriveGroupStatus_AllCompleted`, `_AllFailed`, `_Partial`, `_OneRunning`, `_LessTasksThanTotal`
-- `TestTaskGroupRepo_SaveAndGet`, `_GetByID_NotFound`
+- `TestTaskRepo_SaveInsertThenUpdate` — same id roundtrip, status transitions persisted
+- `TestTaskRepo_JSONFieldRoundtrip` — `payload`, `result`, `requiredCapabilities` survive marshal/unmarshal
+- `TestTaskRepo_AISchedulePointerEncoding` — `nil` ↔ `''`, `*true` ↔ `'true'`, `*false` ↔ `'false'`
+- `TestTaskQueue_EnqueueWritesThrough` — `WithRepo(stub)` then `Enqueue` triggers `Save`
+- `TestTaskQueue_RepoFailureDoesNotBlockEnqueue` — repo returning error still leaves task in memory
+- `TestTaskGroupRepo_SaveAndGet`, `_GetByID_NotFound`, `_GetTasksByGroup`
 - `TestAPITaskBatchCreate_HappyPath`, `_EmptyTasks`, `_InvalidTaskRollsBackTransaction`
 - `TestAPIGetGroup_DerivedStatus`, `_DetailFull`, `_NotFound`
 
@@ -322,5 +405,6 @@ Group state always flows from tasks; there is no API or internal call that mutat
 ## Migration / rollout
 
 - Backwards compatible: clients that only use `POST /api/tasks` and `GET /api/tasks/:id` see no change.
-- A migration adds one table and one column; both default-empty for existing rows. No data backfill required.
+- The migration adds two tables (`tasks`, `task_groups`). Existing servers run the migration on next boot via `sqlite.DB.migrate()`. No data backfill — pre-existing in-memory tasks are not retroactively persisted (they live and die in memory as before; only tasks created after the deploy land in the new table).
 - The new endpoints are gated behind the same Tailscale auth as the existing mutating routes — no new auth surface.
+- After deploy, operators can immediately verify the system works by running `sqlite3 ~/.hydra/hydra.db 'SELECT id, status, group_id FROM tasks ORDER BY created_at DESC LIMIT 10'` — a debug capability the system has never had before.
