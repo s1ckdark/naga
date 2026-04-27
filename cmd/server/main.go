@@ -85,9 +85,14 @@ func main() {
 	// One-shot orphan cleanup: any task left non-terminal from a prior run
 	// can never converge (the in-memory TaskQueue rebuilds empty on boot). Mark
 	// them failed with an explanatory message so consuming groups transition
-	// to partial/failed correctly. Cutoff = boot moment minus 1s grace so
-	// tasks created in the same wall-clock second as boot are not swept.
-	bootCutoff := time.Now().Add(-1 * time.Second)
+	// to partial/failed correctly.
+	//
+	// Cutoff = current wall-clock. Routes (the only way to create new tasks
+	// in this run) aren't registered until later in main(), so no fresh task
+	// can have created_at <= now() yet. The earlier `now - 1s` cutoff left a
+	// gap where tasks created in the final second before a previous crash
+	// were not swept; using now() closes that gap.
+	bootCutoff := time.Now()
 	if affected, err := repos.Tasks.MarkStaleTasksFailed(context.Background(), bootCutoff); err != nil {
 		log.Printf("[startup] stale-task cleanup failed: %v", err)
 	} else if affected > 0 {

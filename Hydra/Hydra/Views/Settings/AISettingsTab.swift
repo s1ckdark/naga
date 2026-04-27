@@ -126,7 +126,10 @@ struct AISettingsTab: View {
             Section {
                 HStack {
                     Button("Save Locally") { saveLocally() }
-                        .disabled(!connectionVerified)
+                        // Also disable while pushToServer is in flight — clicking
+                        // mid-PUT would mutate saveStatus and re-enable Save & Push,
+                        // allowing duplicate concurrent requests.
+                        .disabled(!connectionVerified || saveStatus.isSaving)
 
                     Spacer()
 
