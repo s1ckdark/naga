@@ -58,6 +58,11 @@ type taskGroupTasksReader interface {
 	GetByGroup(ctx context.Context, groupID string) ([]*domain.Task, error)
 }
 
+// taskGroupSaver is the write-side of TaskGroupRepository.
+type taskGroupSaver interface {
+	Save(ctx context.Context, group *domain.TaskGroup) error
+}
+
 // Handler handles HTTP requests
 type Handler struct {
 	deviceUC       *usecase.DeviceUseCase
@@ -71,6 +76,7 @@ type Handler struct {
 	taskSupervisor *usecase.TaskSupervisor
 	taskGroupRepo  taskGroupReader
 	taskGroupTasks taskGroupTasksReader
+	taskGroupSaver taskGroupSaver
 }
 
 // NewHandler creates a new Handler
@@ -112,9 +118,15 @@ func (h *Handler) SetTaskSupervisor(s *usecase.TaskSupervisor) {
 	h.taskSupervisor = s
 }
 
-// SetTaskGroupRepos wires the read-side dependencies for /api/groups.
-func (h *Handler) SetTaskGroupRepos(g taskGroupReader, t taskGroupTasksReader) {
+// SetTaskGroupRepos wires the read and write dependencies for /api/groups
+// and /api/tasks/batch. The concrete type passed as g must implement both
+// taskGroupReader and taskGroupSaver (e.g. *sqlite.TaskGroupRepository).
+func (h *Handler) SetTaskGroupRepos(g interface {
+	taskGroupReader
+	taskGroupSaver
+}, t taskGroupTasksReader) {
 	h.taskGroupRepo = g
+	h.taskGroupSaver = g
 	h.taskGroupTasks = t
 }
 

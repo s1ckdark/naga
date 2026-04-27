@@ -130,3 +130,88 @@ func TestAPIGetGroup_DetailFull(t *testing.T) {
 		t.Errorf("?detail=full should include tasks[]: %s", rec.Body.String())
 	}
 }
+
+func TestAPITaskBatchCreate_HappyPath(t *testing.T) {
+	gRepo := &stubTaskGroupRepo{data: map[string]*domain.TaskGroup{}}
+	tRepo := &stubTaskRepoForGroup{data: map[string][]*domain.Task{}}
+	tq := domain.NewTaskQueue()
+	h := &Handler{
+		taskGroupRepo:  gRepo,
+		taskGroupTasks: tRepo,
+		taskGroupSaver: gRepo,
+		taskQueue:      tq,
+	}
+
+	e := echo.New()
+	body := `{"name":"qa","tasks":[{"type":"shell"},{"type":"shell"},{"type":"shell"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/batch", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APITaskBatchCreate(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(gRepo.data) != 1 {
+		t.Errorf("group not saved")
+	}
+	if cnt := tq.PendingCount(); cnt != 3 {
+		t.Errorf("queued count = %d, want 3", cnt)
+	}
+}
+
+func TestAPITaskBatchCreate_EmptyTasks(t *testing.T) {
+	tq := domain.NewTaskQueue()
+	h := &Handler{
+		taskGroupRepo:  &stubTaskGroupRepo{data: map[string]*domain.TaskGroup{}},
+		taskGroupTasks: &stubTaskRepoForGroup{data: map[string][]*domain.Task{}},
+		taskGroupSaver: &stubTaskGroupRepo{data: map[string]*domain.TaskGroup{}},
+		taskQueue:      tq,
+	}
+	e := echo.New()
+	body := `{"tasks":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/batch", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APITaskBatchCreate(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestAPITaskBatchCreate_InvalidTaskRollsBack(t *testing.T) {
+	gRepo := &stubTaskGroupRepo{data: map[string]*domain.TaskGroup{}}
+	tq := domain.NewTaskQueue()
+	h := &Handler{
+		taskGroupRepo:  &stubTaskGroupRepo{data: map[string]*domain.TaskGroup{}},
+		taskGroupTasks: &stubTaskRepoForGroup{data: map[string][]*domain.Task{}},
+		taskGroupSaver: gRepo,
+		taskQueue:      tq,
+	}
+	e := echo.New()
+	body := `{"tasks":[{"type":"shell"},{"type":""}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/batch", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APITaskBatchCreate(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+	if len(gRepo.data) != 0 {
+		t.Errorf("group should not be saved on validation failure: %+v", gRepo.data)
+	}
+	if tq.PendingCount() != 0 {
+		t.Errorf("queue should be empty after rollback, got %d", tq.PendingCount())
+	}
+}
