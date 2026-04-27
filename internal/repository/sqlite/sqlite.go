@@ -218,6 +218,47 @@ func (d *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_orchs_status ON orchs(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_orchs_name ON orchs(name)`,
 		`CREATE INDEX IF NOT EXISTS idx_metrics_device_time ON metrics(device_id, collected_at DESC)`,
+
+		// Tasks table — write-through shadow of the in-memory TaskQueue.
+		`CREATE TABLE IF NOT EXISTS tasks (
+			id                     TEXT PRIMARY KEY,
+			parent_id              TEXT NOT NULL DEFAULT '',
+			orch_id                TEXT NOT NULL DEFAULT '',
+			type                   TEXT NOT NULL,
+			status                 TEXT NOT NULL,
+			priority               TEXT NOT NULL DEFAULT 'normal',
+			required_capabilities  TEXT NOT NULL DEFAULT '[]',
+			preferred_device_id    TEXT NOT NULL DEFAULT '',
+			assigned_device_id     TEXT NOT NULL DEFAULT '',
+			payload                TEXT NOT NULL DEFAULT '{}',
+			result                 TEXT NOT NULL DEFAULT '',
+			error                  TEXT NOT NULL DEFAULT '',
+			created_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			assigned_at            TIMESTAMP,
+			started_at             TIMESTAMP,
+			completed_at           TIMESTAMP,
+			timeout_ns             INTEGER NOT NULL DEFAULT 0,
+			retry_count            INTEGER NOT NULL DEFAULT 0,
+			max_retries            INTEGER NOT NULL DEFAULT 0,
+			created_by             TEXT NOT NULL DEFAULT '',
+			resource_reqs          TEXT NOT NULL DEFAULT '',
+			blocked_device_ids     TEXT NOT NULL DEFAULT '[]',
+			ai_schedule            TEXT NOT NULL DEFAULT '',
+			group_id               TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_status     ON tasks(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_group_id   ON tasks(group_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)`,
+
+		// Task groups table — fan-out batch identity.
+		`CREATE TABLE IF NOT EXISTS task_groups (
+			id          TEXT PRIMARY KEY,
+			name        TEXT NOT NULL DEFAULT '',
+			created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			created_by  TEXT NOT NULL DEFAULT '',
+			total_tasks INTEGER NOT NULL,
+			metadata    TEXT NOT NULL DEFAULT '{}'
+		)`,
 	}
 
 	for _, migration := range migrations {
