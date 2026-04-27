@@ -133,8 +133,17 @@ func main() {
 	h.SetWebSocketHub(wsHub)
 
 	// Initialize task queue
-	taskQueue := domain.NewTaskQueue()
+	taskQueue := domain.NewTaskQueue().WithRepo(repos.Tasks)
 	h.SetTaskQueue(taskQueue)
+
+	// repos.TaskGroups already satisfies taskGroupReader+taskGroupSaver via its
+	// Save and GetByID methods. repos.Tasks is typed as domain.TaskRepository
+	// (Save/Delete) but the concrete sqlite implementation also exposes
+	// GetByGroup; assert to that extra-method interface so APIGetGroup can use it.
+	type taskGroupTasks interface {
+		GetByGroup(ctx context.Context, groupID string) ([]*domain.Task, error)
+	}
+	h.SetTaskGroupRepos(repos.TaskGroups, repos.Tasks.(taskGroupTasks))
 
 	// Wire WebSocket disconnect handler for immediate task reassignment
 	wsHub.SetDisconnectHandler(func(deviceID string) {
@@ -267,6 +276,8 @@ func main() {
 	api.POST("/tasks", h.APITaskCreate)
 	api.PUT("/tasks/:id/status", h.APITaskUpdateStatus)
 	api.PUT("/tasks/:id/result", h.APITaskSetResult)
+	api.GET("/groups/:id", h.APIGetGroup)
+	apiWrite.POST("/tasks/batch", h.APITaskBatchCreate)
 
 	// Capability routes
 	api.POST("/devices/:id/capabilities", h.APIRegisterCapabilities)
