@@ -59,18 +59,19 @@ type taskGroupSaver interface {
 
 // Handler handles HTTP requests
 type Handler struct {
-	deviceUC       *usecase.DeviceUseCase
-	orchUC         *usecase.OrchUseCase
-	monitorUC      *usecase.MonitorUseCase
-	failoverUC     *usecase.FailoverUseCase
-	executor       RemoteExecutor
-	cfg            *config.Config
-	wsHub          *ws.Hub
-	taskQueue      *domain.TaskQueue
-	taskSupervisor *usecase.TaskSupervisor
-	taskGroupRepo  taskGroupReader
-	taskGroupTasks domain.TaskRepository
-	taskGroupSaver taskGroupSaver
+	deviceUC           *usecase.DeviceUseCase
+	orchUC             *usecase.OrchUseCase
+	monitorUC          *usecase.MonitorUseCase
+	failoverUC         *usecase.FailoverUseCase
+	executor           RemoteExecutor
+	cfg                *config.Config
+	wsHub              *ws.Hub
+	taskQueue          *domain.TaskQueue
+	taskSupervisor     *usecase.TaskSupervisor
+	taskGroupRepo      taskGroupReader
+	taskGroupTasks     domain.TaskRepository
+	taskGroupSaver     taskGroupSaver
+	aiArbiterRebuilder func(ai config.AIConfig)
 }
 
 // NewHandler creates a new Handler
@@ -110,6 +111,14 @@ func (h *Handler) SetTaskQueue(queue *domain.TaskQueue) {
 // legacy immediate-assign path.
 func (h *Handler) SetTaskSupervisor(s *usecase.TaskSupervisor) {
 	h.taskSupervisor = s
+}
+
+// SetAIArbiterRebuilder wires a callback the handler invokes after
+// PUT /api/config/ai persists the new config so the running supervisor
+// picks up provider/key/endpoint changes without a process restart.
+// Pass nil to disable; if nil the supervisor's arbiter stays at boot config.
+func (h *Handler) SetAIArbiterRebuilder(rebuild func(ai config.AIConfig)) {
+	h.aiArbiterRebuilder = rebuild
 }
 
 // SetTaskGroupRepos wires the read and write dependencies for /api/groups

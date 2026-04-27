@@ -32,13 +32,14 @@ func (p providerConfigJSON) toConfig() config.ProviderConfig {
 // AlwaysConsult promotes the AI to the primary scheduler (every task
 // goes through the AI provider, subject to per-tick budget) instead of a
 // rule-based tiebreaker. Per-task `aiSchedule` overrides this default both
-// ways. Defaults to false when omitted from the JSON body.
+// ways. Use a pointer so that omitting the field preserves the current value
+// rather than silently resetting it to false.
 type AIConfigRequest struct {
 	Default            providerConfigJSON  `json:"default"`
 	HeadSelection      *providerConfigJSON `json:"head_selection,omitempty"`
 	TaskScheduling     *providerConfigJSON `json:"task_scheduling,omitempty"`
 	CapacityEstimation *providerConfigJSON `json:"capacity_estimation,omitempty"`
-	AlwaysConsult      bool                `json:"always_consult"`
+	AlwaysConsult      *bool               `json:"always_consult,omitempty"`
 }
 
 // APIGetAIConfig returns the current AI configuration with API keys masked.
@@ -84,7 +85,10 @@ func (h *Handler) APIPutAIConfig(c echo.Context) error {
 
 	newAI := config.AIConfig{
 		Default:       req.Default.toConfig(),
-		AlwaysConsult: req.AlwaysConsult,
+		AlwaysConsult: h.cfg.Agent.AI.AlwaysConsult, // preserve unless explicitly provided
+	}
+	if req.AlwaysConsult != nil {
+		newAI.AlwaysConsult = *req.AlwaysConsult
 	}
 	if req.HeadSelection != nil {
 		pc := req.HeadSelection.toConfig()
@@ -110,6 +114,10 @@ func (h *Handler) APIPutAIConfig(c echo.Context) error {
 	// continues to override.
 	if h.taskSupervisor != nil {
 		h.taskSupervisor.SetAlwaysConsultAI(newAI.AlwaysConsult)
+	}
+
+	if h.aiArbiterRebuilder != nil {
+		h.aiArbiterRebuilder(newAI)
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "updated"})

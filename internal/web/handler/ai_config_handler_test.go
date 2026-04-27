@@ -123,3 +123,86 @@ func TestAPIPutAIConfig_RequiresEndpointForLocalProvider(t *testing.T) {
 		t.Errorf("status = %d; want 400 for local provider without endpoint", rec.Code)
 	}
 }
+
+func TestAPIPutAIConfig_OmittedAlwaysConsultPreservesPrevious(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tailscale.APIKey = "tskey-test"
+	cfg.Agent.AI = config.AIConfig{
+		Default:       config.ProviderConfig{Provider: "claude", APIKey: "sk-x"},
+		AlwaysConsult: true, // user previously enabled
+	}
+	t.Setenv("NAGA_CONFIG_DIR", t.TempDir())
+	h := &Handler{cfg: cfg}
+
+	e := echo.New()
+	body := `{"default":{"provider":"claude","api_key":"sk-y"}}` // no always_consult
+	req := httptest.NewRequest(http.MethodPut, "/api/config/ai", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APIPutAIConfig(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !cfg.Agent.AI.AlwaysConsult {
+		t.Errorf("AlwaysConsult got flipped to false; should be preserved when omitted")
+	}
+}
+
+func TestAPIPutAIConfig_ExplicitAlwaysConsultApplies(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tailscale.APIKey = "tskey-test"
+	cfg.Agent.AI = config.AIConfig{
+		Default:       config.ProviderConfig{Provider: "claude", APIKey: "sk-x"},
+		AlwaysConsult: false,
+	}
+	t.Setenv("NAGA_CONFIG_DIR", t.TempDir())
+	h := &Handler{cfg: cfg}
+
+	e := echo.New()
+	body := `{"default":{"provider":"claude","api_key":"sk-y"},"always_consult":true}`
+	req := httptest.NewRequest(http.MethodPut, "/api/config/ai", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APIPutAIConfig(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if !cfg.Agent.AI.AlwaysConsult {
+		t.Errorf("AlwaysConsult should be true after explicit set")
+	}
+}
+
+func TestAPIPutAIConfig_InvokesArbiterRebuilder(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tailscale.APIKey = "tskey-test"
+	t.Setenv("NAGA_CONFIG_DIR", t.TempDir())
+
+	var rebuiltWith *config.AIConfig
+	h := &Handler{cfg: cfg}
+	h.SetAIArbiterRebuilder(func(newAI config.AIConfig) {
+		c := newAI
+		rebuiltWith = &c
+	})
+
+	e := echo.New()
+	body := `{"default":{"provider":"claude","api_key":"sk-new","model":"claude-sonnet-4-6"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/config/ai", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APIPutAIConfig(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rebuiltWith == nil {
+		t.Fatal("aiArbiterRebuilder was not invoked")
+	}
+	if rebuiltWith.Default.Provider != "claude" || rebuiltWith.Default.APIKey != "sk-new" {
+		t.Errorf("rebuilder received wrong config: %+v", rebuiltWith)
+	}
+}

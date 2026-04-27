@@ -176,6 +176,19 @@ func main() {
 		taskSupervisor.SetAlwaysConsultAI(true)
 		log.Printf("[supervisor] AI promoted to primary scheduler (always_consult=true); per-task aiSchedule still wins")
 	}
+	// Allow PUT /api/config/ai to rebuild the running arbiter without a
+	// process restart. The closure captures taskSupervisor by reference;
+	// passing nil arbiter disables tiebreaking until the next valid PUT.
+	h.SetAIArbiterRebuilder(func(newAI config.AIConfig) {
+		reg := buildAIRegistry(newAI)
+		arbiter := reg.TaskSchedulerProvider()
+		taskSupervisor.SetAIArbiter(arbiter, 0.10, 5, 3*time.Second)
+		if arbiter != nil {
+			log.Printf("[supervisor] AI tiebreaker rebuilt from PUT (provider=%s)", newAI.Resolve("schedule").Provider)
+		} else {
+			log.Printf("[supervisor] AI tiebreaker disabled by PUT (no provider)")
+		}
+	})
 	h.SetTaskSupervisor(taskSupervisor)
 	go taskSupervisor.Start(monitorCtx)
 	h.SetExecutor(sshExecutor)
