@@ -45,6 +45,19 @@ func internalError(c echo.Context, msg string, err error) error {
 	return c.JSON(http.StatusInternalServerError, map[string]string{"error": msg})
 }
 
+// taskGroupReader is the subset of repository.TaskGroupRepository the
+// /api/groups endpoint needs. Local interface so handler tests can supply
+// stubs without pulling sqlite into the test build graph.
+type taskGroupReader interface {
+	GetByID(ctx context.Context, id string) (*domain.TaskGroup, error)
+}
+
+// taskGroupTasksReader is the read-side of TaskRepository scoped to group
+// task lookup.
+type taskGroupTasksReader interface {
+	GetByGroup(ctx context.Context, groupID string) ([]*domain.Task, error)
+}
+
 // Handler handles HTTP requests
 type Handler struct {
 	deviceUC       *usecase.DeviceUseCase
@@ -56,6 +69,8 @@ type Handler struct {
 	wsHub          *ws.Hub
 	taskQueue      *domain.TaskQueue
 	taskSupervisor *usecase.TaskSupervisor
+	taskGroupRepo  taskGroupReader
+	taskGroupTasks taskGroupTasksReader
 }
 
 // NewHandler creates a new Handler
@@ -95,6 +110,12 @@ func (h *Handler) SetTaskQueue(queue *domain.TaskQueue) {
 // legacy immediate-assign path.
 func (h *Handler) SetTaskSupervisor(s *usecase.TaskSupervisor) {
 	h.taskSupervisor = s
+}
+
+// SetTaskGroupRepos wires the read-side dependencies for /api/groups.
+func (h *Handler) SetTaskGroupRepos(g taskGroupReader, t taskGroupTasksReader) {
+	h.taskGroupRepo = g
+	h.taskGroupTasks = t
 }
 
 // Dashboard renders the main dashboard
