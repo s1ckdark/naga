@@ -34,24 +34,26 @@ func main() {
 
 	flag.Parse()
 
-	// Resolve from env if not set via flag
+	// Resolve from env if not set via flag. HYDRA_ is the canonical prefix;
+	// NAGA_ is honored as a legacy alias so deployments scripted before the
+	// rename continue to work.
 	if *anthropicKey == "" {
 		*anthropicKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
 	if *aiProvider == "" {
-		*aiProvider = os.Getenv("NAGA_AI_PROVIDER")
+		*aiProvider = envFallback("HYDRA_AI_PROVIDER", "NAGA_AI_PROVIDER")
 	}
 	if *ollamaEndpoint == "" {
-		*ollamaEndpoint = os.Getenv("NAGA_OLLAMA_ENDPOINT")
+		*ollamaEndpoint = envFallback("HYDRA_OLLAMA_ENDPOINT", "NAGA_OLLAMA_ENDPOINT")
 	}
 	if *ollamaModel == "" {
-		*ollamaModel = os.Getenv("NAGA_OLLAMA_MODEL")
+		*ollamaModel = envFallback("HYDRA_OLLAMA_MODEL", "NAGA_OLLAMA_MODEL")
 	}
 	if *lmstudioEndpoint == "" {
-		*lmstudioEndpoint = os.Getenv("NAGA_LMSTUDIO_ENDPOINT")
+		*lmstudioEndpoint = envFallback("HYDRA_LMSTUDIO_ENDPOINT", "NAGA_LMSTUDIO_ENDPOINT")
 	}
 	if *lmstudioModel == "" {
-		*lmstudioModel = os.Getenv("NAGA_LMSTUDIO_MODEL")
+		*lmstudioModel = envFallback("HYDRA_LMSTUDIO_MODEL", "NAGA_LMSTUDIO_MODEL")
 	}
 
 	if *nodeID == "" {
@@ -151,4 +153,15 @@ func probeEndpoint(url string) bool {
 	}
 	resp.Body.Close()
 	return resp.StatusCode == http.StatusOK
+}
+
+// envFallback returns the first non-empty value across the supplied env var
+// names. Used to honor a legacy prefix while preferring the canonical one.
+func envFallback(names ...string) string {
+	for _, n := range names {
+		if v := os.Getenv(n); v != "" {
+			return v
+		}
+	}
+	return ""
 }
