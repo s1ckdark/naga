@@ -130,7 +130,17 @@ func (q *TaskQueue) deviceMatchesTask(device *Device, task *Task) bool {
 	return true
 }
 
-// Get returns a task by ID
+// Get returns a task by ID, or nil if not found.
+//
+// The returned pointer aliases the queue's internal storage. Callers MUST
+// treat it as read-only — mutating fields on the returned task bypasses
+// the queue's mutex and the write-through repository, leaving in-memory
+// state and the persisted `tasks` row out of sync. Use UpdateStatus,
+// SetResult, AssignToDevice, or one of the other documented mutation
+// methods to change a task's state.
+//
+// If a defensive copy is needed (e.g. building a response that callers
+// might mutate), copy the fields you need at the call site.
 func (q *TaskQueue) Get(taskID string) *Task {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
