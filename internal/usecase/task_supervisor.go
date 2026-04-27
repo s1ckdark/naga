@@ -55,6 +55,8 @@ func NewTaskSupervisor(taskQueue *domain.TaskQueue, wsHub *ws.Hub, deviceUC *Dev
 // AI calls per scheduling tick; timeout caps an individual arbiter call.
 // Passing a nil arbiter disables tiebreaking.
 func (s *TaskSupervisor) SetAIArbiter(arbiter ai.TaskScheduler, epsilon float64, budget int, timeout time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.aiArbiter = arbiter
 	s.tiebreakEpsilon = epsilon
 	s.aiCallBudget = budget
@@ -66,6 +68,8 @@ func (s *TaskSupervisor) SetAIArbiter(arbiter ai.TaskScheduler, epsilon float64,
 // (when non-nil) overrides this. The aiCallBudget still caps how many AI
 // calls can fire per scheduling tick.
 func (s *TaskSupervisor) SetAlwaysConsultAI(enable bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.alwaysConsultAI = enable
 }
 

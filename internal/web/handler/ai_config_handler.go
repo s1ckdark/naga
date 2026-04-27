@@ -103,12 +103,14 @@ func (h *Handler) APIPutAIConfig(c echo.Context) error {
 		newAI.CapacityEstimation = &pc
 	}
 
+	oldAI := h.cfg.Agent.AI
 	h.cfg.Agent.AI = newAI
-
 	if err := config.Save(h.cfg); err != nil {
+		h.cfg.Agent.AI = oldAI // roll back in-memory mutation on persist failure
 		return internalError(c, "failed to save config", err)
 	}
 
+	// Disk and memory are now consistent. Propagate runtime state.
 	// Propagate the always_consult flag to the running supervisor so flips
 	// take effect without requiring a server restart. Per-task aiSchedule
 	// continues to override.

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -204,5 +206,42 @@ func TestAPIPutAIConfig_InvokesArbiterRebuilder(t *testing.T) {
 	}
 	if rebuiltWith.Default.Provider != "claude" || rebuiltWith.Default.APIKey != "sk-new" {
 		t.Errorf("rebuilder received wrong config: %+v", rebuiltWith)
+	}
+}
+
+func TestAPIPutAIConfig_RollsBackInMemoryOnSaveFailure(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tailscale.APIKey = "tskey-test"
+	cfg.Agent.AI = config.AIConfig{
+		Default: config.ProviderConfig{Provider: "claude", APIKey: "sk-original"},
+	}
+
+	// Make config.Save fail by pointing NAGA_CONFIG_DIR at a path inside a
+	// directory whose permissions prevent creation of subdirectories.
+	unwritableParent := t.TempDir()
+	if err := os.Chmod(unwritableParent, 0000); err != nil {
+		t.Skipf("cannot chmod temp dir (likely running as root): %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(unwritableParent, 0700) })
+	t.Setenv("NAGA_CONFIG_DIR", filepath.Join(unwritableParent, "subdir"))
+
+	h := &Handler{cfg: cfg}
+
+	e := echo.New()
+	body := `{"default":{"provider":"claude","api_key":"sk-attempted-update"}}`
+	req := httptest.NewRequest(http.MethodPut, "/api/config/ai", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.APIPutAIConfig(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 (Save should fail)", rec.Code)
+	}
+	// In-memory config must be rolled back to the original value.
+	if cfg.Agent.AI.Default.APIKey != "sk-original" {
+		t.Errorf("in-memory APIKey = %q, want sk-original (rollback expected)", cfg.Agent.AI.Default.APIKey)
 	}
 }
