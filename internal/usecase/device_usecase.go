@@ -66,20 +66,40 @@ func (uc *DeviceUseCase) SetGPUChecker(checker GPUChecker) {
 // SetCapabilities records the capability list for deviceID. The override is
 // applied on every subsequent ListDevices/GetDevice return, so it survives
 // the cache TTL refresh that would otherwise wipe Capabilities populated by
-// APIRegisterCapabilities. Passing an empty slice clears the override.
+// APIRegisterCapabilities. Passing an empty slice clears the override and
+// also resets the cached device's Capabilities — applyCapabilityOverrides
+// only writes new values, it doesn't undo prior mutations, so without this
+// reset a cleared device would keep reporting the stale capability set
+// until the next Tailscale refresh.
 func (uc *DeviceUseCase) SetCapabilities(deviceID string, caps []string) {
 	uc.capsMu.Lock()
-	defer uc.capsMu.Unlock()
 	if uc.capabilityOverride == nil {
 		uc.capabilityOverride = make(map[string][]string)
 	}
+	cleared := false
 	if len(caps) == 0 {
 		delete(uc.capabilityOverride, deviceID)
-		return
+		cleared = true
+	} else {
+		cp := make([]string, len(caps))
+		copy(cp, caps)
+		uc.capabilityOverride[deviceID] = cp
 	}
-	cp := make([]string, len(caps))
-	copy(cp, caps)
-	uc.capabilityOverride[deviceID] = cp
+	uc.capsMu.Unlock()
+
+	if cleared {
+		// Revert any prior in-place mutation on the cached device pointer
+		// (ListDevices reuses the same *Device, so an old override could
+		// persist on it after the override-map entry is gone).
+		uc.cacheMu.Lock()
+		for _, d := range uc.cachedDevices {
+			if d.ID == deviceID {
+				d.Capabilities = nil
+				break
+			}
+		}
+		uc.cacheMu.Unlock()
+	}
 }
 
 // applyCapabilityOverrides mutates the given devices in place, replacing

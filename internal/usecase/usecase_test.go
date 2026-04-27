@@ -269,6 +269,38 @@ func TestDeviceUseCase_SetCapabilities_EmptyClears(t *testing.T) {
 	}
 }
 
+func TestDeviceUseCase_SetCapabilities_EmptyClearsCachedDevicePointer(t *testing.T) {
+	// Regression test: clearing an override must also reset the cached device's
+	// Capabilities, not just delete the override map entry. Otherwise the
+	// in-place mutation applied during the prior override would persist on the
+	// cached *Device pointer until the next Tailscale refresh.
+	repos := setupTestRepos(t)
+	ts := &mockTailscale{devices: testDevices()}
+	uc := NewDeviceUseCase(repos, ts, &mockCollector{})
+	ctx := context.Background()
+
+	if _, err := uc.ListDevices(ctx, false); err != nil { // populate cache
+		t.Fatalf("ListDevices: %v", err)
+	}
+	uc.SetCapabilities("d1", []string{"gpu"})
+	if _, err := uc.ListDevices(ctx, false); err != nil { // applies override
+		t.Fatalf("ListDevices2: %v", err)
+	}
+
+	uc.SetCapabilities("d1", nil) // clear
+
+	devices, _ := uc.ListDevices(ctx, false) // cache hit, applyCapabilityOverrides no-ops for d1
+	for _, d := range devices {
+		if d.ID == "d1" {
+			if len(d.Capabilities) != 0 {
+				t.Errorf("cached d1.Capabilities = %v after clear; want empty", d.Capabilities)
+			}
+			return
+		}
+	}
+	t.Errorf("d1 not found in cached devices")
+}
+
 func TestDeviceUseCase_GetCapabilities_DefensiveCopy(t *testing.T) {
 	repos := setupTestRepos(t)
 	ts := &mockTailscale{devices: testDevices()}

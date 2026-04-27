@@ -288,8 +288,13 @@ struct AISettingsTab: View {
             body[jsonKey] = override
         }
 
+        guard let baseURL = URL(string: serverURL) else {
+            withAnimation { saveStatus = .error("Invalid server URL: \(serverURL)") }
+            return
+        }
+
         do {
-            let url = URL(string: serverURL)!.appendingPathComponent("api/config/ai")
+            let url = baseURL.appendingPathComponent("api/config/ai")
             var request = URLRequest(url: url, timeoutInterval: 15)
             request.httpMethod = "PUT"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
