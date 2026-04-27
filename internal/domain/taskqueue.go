@@ -17,6 +17,13 @@ type TaskQueue struct {
 	tasks map[string]*Task // taskID -> task
 	queue []*Task          // pending tasks ordered by priority/time
 	repo  TaskRepository   // optional write-through; nil disables persistence
+
+	// Async persist (opt-in via WithAsyncPersist). When persistCh != nil,
+	// persist() pushes a snapshot to the channel and a single worker
+	// goroutine drains it into the repo. Drops on full channel — bounded
+	// loss is acceptable per the queue's fail-soft contract.
+	persistCh   chan *Task
+	persistDone chan struct{}
 }
 
 func NewTaskQueue() *TaskQueue {
@@ -39,14 +46,79 @@ func (q *TaskQueue) WithRepo(r TaskRepository) *TaskQueue {
 	return q
 }
 
-// persist writes a task to the repo if one is configured. Errors are logged
-// and swallowed — DB downtime must not stall the in-memory scheduler.
+// WithAsyncPersist enables a buffered worker goroutine for repo writes.
+// `buf` is the channel buffer; 0 or negative leaves the queue in
+// synchronous mode (the default). Calling twice is a no-op.
 //
-// Caller must hold q.mu (Lock or RLock). The implementation reads q.repo
-// without acquiring the lock, so callers from outside an already-locked
-// section would race with WithRepo.
+// Intended to be called once at construction, before the queue is
+// shared with goroutines. Pair with Close() to drain pending writes
+// at shutdown.
+func (q *TaskQueue) WithAsyncPersist(buf int) *TaskQueue {
+	if buf <= 0 {
+		return q
+	}
+	q.mu.Lock()
+	if q.persistCh != nil {
+		q.mu.Unlock()
+		return q
+	}
+	ch := make(chan *Task, buf)
+	done := make(chan struct{})
+	repo := q.repo
+	q.persistCh = ch
+	q.persistDone = done
+	q.mu.Unlock()
+	go func() {
+		defer close(done)
+		for t := range ch {
+			if repo == nil {
+				continue
+			}
+			if err := repo.Save(context.Background(), t); err != nil {
+				log.Printf("[taskqueue] async persist failed for %s: %v", t.ID, err)
+			}
+		}
+	}()
+	return q
+}
+
+// Close drains any pending async persists and stops the worker goroutine.
+// Synchronous queues (without WithAsyncPersist) treat Close as a no-op.
+// Safe to call multiple times.
+func (q *TaskQueue) Close() {
+	q.mu.Lock()
+	ch := q.persistCh
+	done := q.persistDone
+	q.persistCh = nil
+	q.persistDone = nil
+	q.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	close(ch)
+	<-done
+}
+
+// persist writes a task to the repo if one is configured. In sync mode
+// this is a fail-soft synchronous Save; in async mode the call sends a
+// task snapshot to the worker channel and returns immediately. A full
+// channel drops the snapshot with a log line — see WithAsyncPersist.
+//
+// Caller must hold q.mu (Lock or RLock). The implementation reads
+// q.repo and q.persistCh without acquiring the lock, so callers from
+// outside an already-locked section would race with WithRepo /
+// WithAsyncPersist.
 func (q *TaskQueue) persist(t *Task) {
 	if q.repo == nil || t == nil {
+		return
+	}
+	if q.persistCh != nil {
+		snap := cloneTask(t)
+		select {
+		case q.persistCh <- snap:
+		default:
+			log.Printf("[taskqueue] async persist channel full; dropped %s", t.ID)
+		}
 		return
 	}
 	if err := q.repo.Save(context.Background(), t); err != nil {
@@ -290,6 +362,60 @@ func (q *TaskQueue) AssignToDevice(taskID, deviceID string) *Task {
 	task.AssignedAt = &now
 	q.persist(task)
 	return task
+}
+
+// cloneTask returns a deep copy safe to mutate without touching the
+// queue's internal storage. Used by the async-persist path so the
+// background worker sees a stable snapshot even if the original task
+// mutates again before its row is saved.
+func cloneTask(t *Task) *Task {
+	if t == nil {
+		return nil
+	}
+	cp := *t
+	if t.RequiredCapabilities != nil {
+		cp.RequiredCapabilities = append([]string(nil), t.RequiredCapabilities...)
+	}
+	if t.BlockedDeviceIDs != nil {
+		cp.BlockedDeviceIDs = append([]string(nil), t.BlockedDeviceIDs...)
+	}
+	if t.Payload != nil {
+		cp.Payload = make(map[string]interface{}, len(t.Payload))
+		for k, v := range t.Payload {
+			cp.Payload[k] = v
+		}
+	}
+	if t.Result != nil {
+		r := *t.Result
+		if t.Result.Output != nil {
+			r.Output = make(map[string]interface{}, len(t.Result.Output))
+			for k, v := range t.Result.Output {
+				r.Output[k] = v
+			}
+		}
+		cp.Result = &r
+	}
+	if t.ResourceReqs != nil {
+		v := *t.ResourceReqs
+		cp.ResourceReqs = &v
+	}
+	if t.AISchedule != nil {
+		v := *t.AISchedule
+		cp.AISchedule = &v
+	}
+	if t.AssignedAt != nil {
+		v := *t.AssignedAt
+		cp.AssignedAt = &v
+	}
+	if t.StartedAt != nil {
+		v := *t.StartedAt
+		cp.StartedAt = &v
+	}
+	if t.CompletedAt != nil {
+		v := *t.CompletedAt
+		cp.CompletedAt = &v
+	}
+	return &cp
 }
 
 // appendUnique appends id to list only if not already present.
