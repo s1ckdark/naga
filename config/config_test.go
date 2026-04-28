@@ -32,8 +32,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Ray.DefaultVersion != "2.9.0" {
 		t.Errorf("Ray.DefaultVersion = %q", cfg.Ray.DefaultVersion)
 	}
-	if cfg.Server.Host != "0.0.0.0" {
-		t.Errorf("Server.Host = %q", cfg.Server.Host)
+	if cfg.Server.Host != "127.0.0.1" {
+		t.Errorf("Server.Host = %q, want 127.0.0.1 (loopback-only by default)", cfg.Server.Host)
 	}
 	if cfg.Server.Port != 8080 {
 		t.Errorf("Server.Port = %d, want 8080", cfg.Server.Port)
@@ -88,6 +88,26 @@ func TestGetConfigDir_Default(t *testing.T) {
 	dir := GetConfigDir()
 	if dir == "" {
 		t.Error("GetConfigDir() should return non-empty default")
+	}
+}
+
+// HYDRA_CONFIG_DIR is the new canonical name; the legacy NAGA_CONFIG_DIR
+// must still work as a fallback so we don't break existing dev shells.
+func TestGetConfigDir_PrefersHydraOverNaga(t *testing.T) {
+	t.Setenv("HYDRA_CONFIG_DIR", "/tmp/hydra-canonical")
+	t.Setenv("NAGA_CONFIG_DIR", "/tmp/naga-legacy")
+
+	if dir := GetConfigDir(); dir != "/tmp/hydra-canonical" {
+		t.Errorf("GetConfigDir() = %q, want /tmp/hydra-canonical (HYDRA_ wins over NAGA_)", dir)
+	}
+}
+
+func TestGetConfigDir_NagaFallbackWhenHydraUnset(t *testing.T) {
+	t.Setenv("HYDRA_CONFIG_DIR", "")
+	t.Setenv("NAGA_CONFIG_DIR", "/tmp/naga-legacy")
+
+	if dir := GetConfigDir(); dir != "/tmp/naga-legacy" {
+		t.Errorf("GetConfigDir() = %q, want /tmp/naga-legacy (NAGA_ honored when HYDRA_ unset)", dir)
 	}
 }
 

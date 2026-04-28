@@ -225,18 +225,20 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(getConfigDir())
 	viper.AddConfigPath(".")
 
-	// Environment variables
-	viper.SetEnvPrefix("NAGA")
+	// Environment variables. Canonical prefix is HYDRA_; the legacy NAGA_
+	// prefix is honored for every explicit binding so existing shells, systemd
+	// units, and CI configs keep working without a flag day. `viper.BindEnv`
+	// accepts multiple names and the first one actually set wins.
+	viper.SetEnvPrefix("HYDRA")
 	viper.AutomaticEnv()
 
-	// Map environment variables
 	viper.BindEnv("tailscale.api_key", "TAILSCALE_API_KEY")
 	viper.BindEnv("tailscale.oauth_client_id", "TAILSCALE_OAUTH_CLIENT_ID")
 	viper.BindEnv("tailscale.oauth_client_secret", "TAILSCALE_OAUTH_CLIENT_SECRET")
-	viper.BindEnv("ssh.user", "NAGA_SSH_USER")
-	viper.BindEnv("ssh.private_key_path", "NAGA_SSH_KEY")
-	viper.BindEnv("database.dsn", "NAGA_DATABASE_DSN")
-	viper.BindEnv("server.api_key", "NAGA_API_KEY")
+	viper.BindEnv("ssh.user", "HYDRA_SSH_USER", "NAGA_SSH_USER")
+	viper.BindEnv("ssh.private_key_path", "HYDRA_SSH_KEY", "NAGA_SSH_KEY")
+	viper.BindEnv("database.dsn", "HYDRA_DATABASE_DSN", "NAGA_DATABASE_DSN")
+	viper.BindEnv("server.api_key", "HYDRA_API_KEY", "NAGA_API_KEY")
 
 	// Try to read config file
 	if err := viper.ReadInConfig(); err != nil {
@@ -305,8 +307,13 @@ func Save(cfg *Config) error {
 	return viper.WriteConfigAs(configPath)
 }
 
-// getConfigDir returns the configuration directory path
+// getConfigDir returns the configuration directory path.
+// HYDRA_CONFIG_DIR is the canonical name; NAGA_CONFIG_DIR is honored as a
+// legacy alias so existing dev environments aren't broken by the rename.
 func getConfigDir() string {
+	if dir := os.Getenv("HYDRA_CONFIG_DIR"); dir != "" {
+		return dir
+	}
 	if dir := os.Getenv("NAGA_CONFIG_DIR"); dir != "" {
 		return dir
 	}
