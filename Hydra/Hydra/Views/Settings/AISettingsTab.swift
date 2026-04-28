@@ -42,12 +42,9 @@ struct AISettingsTab: View {
         Form {
             Section {
                 Picker("Provider", selection: $provider) {
-                    Text(label(for: "claude")).tag("claude")
-                    Text(label(for: "openai")).tag("openai")
-                    Text(label(for: "zai")).tag("zai")
-                    Text(label(for: "ollama")).tag("ollama")
-                    Text(label(for: "lmstudio")).tag("lmstudio")
-                    Text(label(for: "openai_compatible")).tag("openai_compatible")
+                    ForEach(AIProviderConfig.allProviders, id: \.self) { id in
+                        Text(label(for: id)).tag(id)
+                    }
                 }
                 .onChange(of: provider) { credentialsChanged() }
 
