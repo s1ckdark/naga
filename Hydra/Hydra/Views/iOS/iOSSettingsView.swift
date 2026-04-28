@@ -18,6 +18,22 @@ struct iOSSettingsView: View {
                     SecureField("API Key (for external access)", text: $apiKey)
                 }
 
+                Section {
+                    NavigationLink {
+                        iOSAIConfigView()
+                    } label: {
+                        HStack {
+                            Image(systemName: "brain")
+                            Text("AI Provider")
+                        }
+                    }
+                } header: {
+                    Text("AI")
+                } footer: {
+                    Text("Configure the AI provider Hydra uses for task scheduling and head election.")
+                        .font(.caption)
+                }
+
                 Section("Capabilities") {
                     ForEach(Array(capabilityRegistry.capabilities.values), id: \.identifier) { cap in
                         HStack {
