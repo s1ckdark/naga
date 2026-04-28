@@ -19,13 +19,8 @@ struct iOSSettingsView: View {
                 }
 
                 Section {
-                    NavigationLink {
+                    NavigationLink("AI Provider") {
                         iOSAIConfigView()
-                    } label: {
-                        HStack {
-                            Image(systemName: "brain")
-                            Text("AI Provider")
-                        }
                     }
                 } header: {
                     Text("AI")
