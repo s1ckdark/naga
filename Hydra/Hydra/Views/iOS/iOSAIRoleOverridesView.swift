@@ -59,11 +59,13 @@ private struct iOSRoleOverrideSection: View {
                         .keyboardType(.URL)
                         .textContentType(.URL)
                         .autocapitalization(.none)
+                        .disableAutocorrection(true)
                 }
 
                 if !provider.isEmpty {
                     TextField("Model (optional)", text: $model)
                         .autocapitalization(.none)
+                        .disableAutocorrection(true)
                 }
             }
         } header: {

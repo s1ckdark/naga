@@ -68,11 +68,13 @@ struct iOSAIConfigView: View {
                     .keyboardType(.URL)
                     .textContentType(.URL)
                     .autocapitalization(.none)
+                    .disableAutocorrection(true)
                     .onChange(of: endpoint) { credentialsChanged() }
             }
 
             TextField("Model (optional)", text: $model)
                 .autocapitalization(.none)
+                .disableAutocorrection(true)
                 .onChange(of: model) { credentialsChanged() }
         } header: {
             Text("AI Provider (Default)")
