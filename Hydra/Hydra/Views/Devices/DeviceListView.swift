@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 struct DeviceListView: View {
     @EnvironmentObject var dashboardVM: DashboardViewModel
@@ -182,6 +185,16 @@ struct DeviceDetailView: View {
     @State private var metrics: DeviceMetrics?
     @State private var pollTask: Task<Void, Never>?
 
+    // SSH recovery state. The banner is gated on showSSHBanner, which is only
+    // raised when the metrics endpoint reports a backend SSH error (m.hasError),
+    // never on transport errors or string-matched English phrases.
+    @State private var sshErrorText: String?
+    @State private var diagnosis: SSHDiagnosis?
+    @State private var isDiagnosing = false
+    @State private var showFingerprintAlert = false
+    @State private var recoveryMessage: String?
+    @State private var showSSHBanner = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -206,6 +219,11 @@ struct DeviceDetailView: View {
                     if device.hasGpu {
                         InfoField(label: "GPU", value: "\(device.gpuCount)x \(device.gpuModel ?? "Unknown")")
                     }
+                }
+
+                // SSH recovery banner
+                if showSSHBanner {
+                    sshRecoveryBanner
                 }
 
                 // Live System Status
@@ -404,9 +422,180 @@ struct DeviceDetailView: View {
 
     private func fetchMetrics() async {
         do {
-            metrics = try await APIClient.shared.getDeviceMetrics(id: device.id)
+            let m = try await APIClient.shared.getDeviceMetrics(id: device.id)
+            metrics = m
+            if m.hasError {
+                sshErrorText = m.error
+                showSSHBanner = true
+            } else {
+                sshErrorText = nil
+                recoveryMessage = nil
+                diagnosis = nil
+                showSSHBanner = false
+            }
         } catch {
-            // silently retry next cycle
+            // Transport / API errors are not necessarily SSH failures; leave
+            // the banner state untouched so a flapping connection does not
+            // open a recovery flow that the user can not act on.
+        }
+    }
+
+    @ViewBuilder
+    private var sshRecoveryBanner: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+                    Text(diagnosis?.humanTitle ?? "SSH 연결 오류")
+                        .font(.callout.bold())
+                        .accessibilityLabel("SSH 연결 경고: \(diagnosis?.humanTitle ?? "SSH 연결 오류")")
+                    Spacer()
+                    if isDiagnosing {
+                        ProgressView().controlSize(.small)
+                    }
+                    Button {
+                        showSSHBanner = false
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("SSH 복구 배너 닫기")
+                }
+                if let text = sshErrorText, !text.isEmpty {
+                    Text(text)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                }
+                if let msg = recoveryMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                HStack {
+                    Button {
+                        Task { await runRecoveryAction() }
+                    } label: {
+                        Label(recoveryActionTitle, systemImage: recoveryActionIcon)
+                    }
+                    .disabled(isDiagnosing)
+                    Spacer()
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .alert("새 호스트 키를 신뢰하시겠습니까?", isPresented: $showFingerprintAlert) {
+            Button("취소", role: .cancel) {}
+            Button("이 새 키 신뢰", role: .destructive) {
+                Task { await acceptHostKey() }
+            }
+        } message: {
+            Text(fingerprintAlertMessage)
+        }
+    }
+
+    private var recoveryActionTitle: String {
+        switch diagnosis?.category {
+        case "host_key_mismatch": return "신뢰하고 업데이트"
+        case "network_unreachable": return "재시도"
+        case "auth_failed": return "로그인 정보 확인"
+        case "key_file_missing": return "키 파일 위치 확인"
+        case "tailscale": return "Tailscale 열기"
+        case "ok": return "다시 진단"
+        case .none: return "SSH 연결 진단"
+        default: return "다시 진단"
+        }
+    }
+
+    private var recoveryActionIcon: String {
+        switch diagnosis?.category {
+        case "host_key_mismatch": return "checkmark.shield"
+        case "network_unreachable": return "arrow.clockwise"
+        case "auth_failed": return "key"
+        case "key_file_missing": return "doc.questionmark"
+        case "tailscale": return "network"
+        default: return "wrench.and.screwdriver"
+        }
+    }
+
+    private func runRecoveryAction() async {
+        switch diagnosis?.category {
+        case "host_key_mismatch":
+            if diagnosis?.hostKeyFingerprint != nil {
+                showFingerprintAlert = true
+            } else {
+                await runDiagnose()
+            }
+        case "tailscale":
+            openTailscaleApp()
+        case "auth_failed":
+            recoveryMessage = "SSH 키가 서버의 authorized_keys에 등록되어 있는지, 사용자 계정이 올바른지 확인하세요."
+            await runDiagnose()
+        case "key_file_missing":
+            recoveryMessage = "Hydra가 사용하는 SSH 개인키 경로를 환경 설정에서 확인하세요."
+            await runDiagnose()
+        default:
+            await runDiagnose()
+        }
+    }
+
+    private func openTailscaleApp() {
+        #if canImport(AppKit)
+        if let url = URL(string: "tailscale://") {
+            NSWorkspace.shared.open(url)
+        }
+        #endif
+    }
+
+    private var fingerprintAlertMessage: String {
+        let fp = diagnosis?.hostKeyFingerprint ?? "(알 수 없음)"
+        let host = diagnosis?.hostname ?? device.tailscaleIp
+        return """
+        \(host)의 호스트 키가 known_hosts에 저장된 값과 다릅니다. 서버를 재설치했을 수도, 중간자(MITM) 공격일 수도 있습니다.
+
+        새 키 지문:
+        \(fp)
+
+        서버에서 직접 확인한 지문과 일치할 때만 신뢰하세요.
+        """
+    }
+
+    private func runDiagnose() async {
+        isDiagnosing = true
+        recoveryMessage = nil
+        defer { isDiagnosing = false }
+        do {
+            let d = try await APIClient.shared.diagnoseSSH(id: device.id)
+            diagnosis = d
+            if d.isOK {
+                recoveryMessage = "SSH 연결이 정상입니다."
+                sshErrorText = nil
+                await fetchMetrics()
+                return
+            }
+            if d.isHostKeyMismatch, d.hostKeyFingerprint != nil {
+                showFingerprintAlert = true
+            }
+        } catch {
+            recoveryMessage = "진단 실패: \(error.localizedDescription)"
+        }
+    }
+
+    private func acceptHostKey() async {
+        guard let fp = diagnosis?.hostKeyFingerprint else { return }
+        isDiagnosing = true
+        defer { isDiagnosing = false }
+        do {
+            _ = try await APIClient.shared.acceptSSHHostKey(id: device.id, fingerprint: fp)
+            recoveryMessage = "호스트 키가 업데이트되었습니다. 재연결 중..."
+            sshErrorText = nil
+            diagnosis = nil
+            await fetchMetrics()
+        } catch {
+            recoveryMessage = "키 저장 실패: \(error.localizedDescription)"
         }
     }
 

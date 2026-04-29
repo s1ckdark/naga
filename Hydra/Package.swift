@@ -18,5 +18,10 @@ let package = Package(
                 .process("Assets.xcassets")
             ]
         ),
+        .testTarget(
+            name: "HydraTests",
+            dependencies: ["Hydra"],
+            path: "Tests/HydraTests"
+        ),
     ]
 )

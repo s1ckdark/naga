@@ -71,6 +71,22 @@ actor APIClient {
         let capabilities: [String]
     }
 
+    // MARK: - SSH Recovery
+
+    struct EmptyBody: Encodable {}
+
+    struct AcceptKeyRequest: Encodable { let fingerprint: String }
+
+    struct OKResponse: Decodable { let status: String }
+
+    func diagnoseSSH(id: String) async throws -> SSHDiagnosis {
+        return try await post("/api/devices/\(id)/ssh/diagnose", body: EmptyBody())
+    }
+
+    func acceptSSHHostKey(id: String, fingerprint: String) async throws -> OKResponse {
+        return try await post("/api/devices/\(id)/ssh/accept-key", body: AcceptKeyRequest(fingerprint: fingerprint))
+    }
+
     // MARK: - Orchs
 
     func listOrchs() async throws -> [Orch] {

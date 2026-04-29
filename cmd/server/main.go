@@ -197,6 +197,7 @@ func main() {
 	h.SetTaskSupervisor(taskSupervisor)
 	go taskSupervisor.Start(monitorCtx)
 	h.SetExecutor(sshExecutor)
+	h.SetSSHRecoverer(sshExecutor)
 
 	// Routes
 	e.GET("/", h.Dashboard)
@@ -289,6 +290,8 @@ func main() {
 	apiWrite.POST("/orchs/:id/failover", h.APIOrchFailover)
 	apiWrite.POST("/orchs/:id/execute", h.APIOrchExecute)
 	apiWrite.POST("/devices/:id/execute", h.APIExecuteOnDevice)
+	apiWrite.POST("/devices/:id/ssh/diagnose", h.APISSHDiagnose)
+	apiWrite.POST("/devices/:id/ssh/accept-key", h.APISSHAcceptHostKey)
 
 	// WebSocket endpoint
 	e.GET("/ws", h.HandleWebSocket)

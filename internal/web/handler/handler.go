@@ -64,6 +64,7 @@ type Handler struct {
 	monitorUC          *usecase.MonitorUseCase
 	failoverUC         *usecase.FailoverUseCase
 	executor           RemoteExecutor
+	sshRecoverer       SSHRecoverer
 	cfg                *config.Config
 	wsHub              *ws.Hub
 	taskQueue          *domain.TaskQueue

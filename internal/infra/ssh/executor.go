@@ -299,17 +299,15 @@ func (e *Executor) getHostKeyCallback() (ssh.HostKeyCallback, error) {
 			return nil
 		}
 
-		// If it's a key-not-found error, auto-accept and save
+		// If it's a key-not-found error, auto-accept and save. We route the
+		// append through AppendKnownHostLine so it shares knownHostsMu with
+		// recovery's ReplaceKnownHost/RemoveKnownHost and can not interleave
+		// with their read-modify-write rewrites.
 		var keyErr *knownhosts.KeyError
 		if errors.As(err, &keyErr) && len(keyErr.Want) == 0 {
-			// Unknown host — append key to known_hosts
-			line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
-			f, appendErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
-			if appendErr != nil {
+			if appendErr := AppendKnownHostLine(hostname, key); appendErr != nil {
 				return fmt.Errorf("unknown host key and failed to save: %w", appendErr)
 			}
-			defer f.Close()
-			fmt.Fprintln(f, line)
 			return nil
 		}
 
