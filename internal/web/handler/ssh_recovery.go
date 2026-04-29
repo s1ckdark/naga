@@ -68,17 +68,19 @@ func (h *Handler) APISSHAcceptHostKey(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// validSHA256Fingerprint enforces the SHA256:<base64-without-padding> shape
-// produced by fingerprintSHA256 in the ssh package. Bounds prevent log noise
-// from oversized payloads; the backend still re-probes the server before
-// accepting, so this is a hygiene check, not a security boundary.
+// validSHA256Fingerprint enforces the SHA256:<base64> shape produced by
+// fingerprintSHA256 in the ssh package. The base64 of a 32-byte digest is
+// exactly 43 chars unpadded or 44 with `=` padding, so anything else is
+// either malformed input or a different hash family. The backend still
+// re-probes the server before accepting, so this is a hygiene check, not a
+// security boundary.
 func validSHA256Fingerprint(fp string) bool {
 	const prefix = "SHA256:"
 	if !strings.HasPrefix(fp, prefix) {
 		return false
 	}
 	payload := fp[len(prefix):]
-	if len(payload) < 16 || len(payload) > 64 {
+	if len(payload) != 43 && len(payload) != 44 {
 		return false
 	}
 	for _, r := range payload {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -170,28 +171,17 @@ func TestKnownHostsConcurrent(t *testing.T) {
 		wg.Add(3)
 		go func(n int) {
 			defer wg.Done()
-			_ = AppendKnownHostLine("100.0.0."+itoa(n), key)
+			_ = AppendKnownHostLine("100.0.0."+strconv.Itoa(n), key)
 		}(i)
 		go func(n int) {
 			defer wg.Done()
-			_ = ReplaceKnownHost("100.0.0."+itoa(n), key)
+			_ = ReplaceKnownHost("100.0.0."+strconv.Itoa(n), key)
 		}(i)
 		go func(n int) {
 			defer wg.Done()
-			_ = RemoveKnownHost("100.0.0." + itoa(n))
+			_ = RemoveKnownHost("100.0.0." + strconv.Itoa(n))
 		}(i)
 	}
 	wg.Wait()
 }
 
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	digits := []byte{}
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	return string(digits)
-}

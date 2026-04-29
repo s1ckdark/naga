@@ -16,13 +16,14 @@ func TestValidSHA256Fingerprint(t *testing.T) {
 		fp   string
 		want bool
 	}{
-		{"SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU", true},
-		{"SHA256:abcDEF0123456789", true},
-		{"sha256:abcDEF0123456789", false},
+		{"SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU", true},   // 43 chars, unpadded
+		{"SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=", true},  // 44 chars, padded
+		{"SHA256:abcDEF0123456789", false},                              // too short
+		{"SHA256:" + strings.Repeat("A", 42), false},                    // off-by-one short
+		{"SHA256:" + strings.Repeat("A", 45), false},                    // off-by-one long
+		{"sha256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU", false},
 		{"SHA256:", false},
-		{"SHA256:short", false},
-		{"SHA256:" + strings.Repeat("A", 65), false},
-		{"SHA256:has spaces in payload", false},
+		{"SHA256:has spaces in payload here xxxxxxxxxxxxxx", false},     // 44 chars but with space
 		{"MD5:47DEQpj8HBSa+/TImW+5JC", false},
 		{"", false},
 	}

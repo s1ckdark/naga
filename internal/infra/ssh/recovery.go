@@ -54,7 +54,7 @@ func knownHostsPath() string {
 
 func fingerprintSHA256(k gossh.PublicKey) string {
 	sum := sha256.Sum256(k.Marshal())
-	return "SHA256:" + strings.TrimRight(base64.StdEncoding.EncodeToString(sum[:]), "=")
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:])
 }
 
 // RemoveKnownHost strips every known_hosts line whose first field matches
@@ -106,8 +106,15 @@ func AppendKnownHostLine(hostname string, key gossh.PublicKey) error {
 func rewriteKnownHostsLocked(hostname string, replacement gossh.PublicKey) error {
 	path := knownHostsPath()
 	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		// File doesn't exist. A pure removal has nothing to do; a replacement
+		// still needs to create the file with the new entry.
+		if replacement == nil {
+			return nil
+		}
 	}
 
 	target := knownhosts.Normalize(hostname)
@@ -176,6 +183,13 @@ func atomicWriteKnownHosts(path string, contents []byte) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		cleanup()
 		return err
+	}
+	// fsync the parent directory so the rename itself is durable across a
+	// power loss. Without this the rename could be replayed in a way that
+	// leaves the new file but loses the directory entry.
+	if dirF, err := os.Open(dir); err == nil {
+		_ = dirF.Sync()
+		dirF.Close()
 	}
 	return nil
 }
@@ -318,36 +332,10 @@ func (e *Executor) AcceptHostKey(ctx context.Context, device *domain.Device, exp
 	return nil
 }
 
-// categorizeSSHError maps a raw SSH dial/handshake error to a user-facing
-// DiagnosisCategory. The returned category drives the recovery UX in the app,
-// so mapping carefully matters.
-//
-// TODO (learning contribution): implement this in ~5–10 lines.
-//
-// Hints — what you're likely to see in err.Error():
-//
-//   • "key mismatch"                     → DiagHostKeyMismatch
-//     (the wrapping callback in executor.go:317 returns a *knownhosts.KeyError
-//      whose Error() is exactly "knownhosts: key mismatch" when Want != nil)
-//
-//   • "unable to authenticate"           → DiagAuthFailed
-//     (the x/crypto/ssh library emits "ssh: handshake failed: ssh: unable to
-//      authenticate, attempted methods [...]")
-//
-//   • "connection refused" /
-//     "i/o timeout" /
-//     "no route to host"                 → DiagNetworkUnreachable
-//
-//   • "failed to read private key" /
-//     "failed to parse private key" /
-//     "no such file or directory"        → DiagKeyFileMissing
-//
-//   • anything else                       → DiagUnknown
-//
-// Always return err.Error() as the message so the UI can still surface the raw
-// text for debugging. Prefer strings.Contains over errors.As here — the ssh
-// library wraps with %v (not %w) so errors.As won't unwrap through the
-// handshake error.
+// categorizeSSHError maps a raw SSH dial/handshake error to a DiagnosisCategory
+// the iOS client branches on. The mapping uses strings.Contains because the
+// x/crypto/ssh handshake error wraps with %v (not %w), so errors.Is/As cannot
+// unwrap through it.
 func categorizeSSHError(err error) (DiagnosisCategory, string) {
 	msg := err.Error()
 	s := strings.ToLower(msg)

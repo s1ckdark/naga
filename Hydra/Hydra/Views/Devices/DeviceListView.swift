@@ -194,6 +194,7 @@ struct DeviceDetailView: View {
     @State private var showFingerprintAlert = false
     @State private var recoveryMessage: String?
     @State private var showSSHBanner = false
+    @State private var sshBannerManuallyDismissed = false
 
     var body: some View {
         ScrollView {
@@ -222,7 +223,7 @@ struct DeviceDetailView: View {
                 }
 
                 // SSH recovery banner
-                if showSSHBanner {
+                if showSSHBanner && !sshBannerManuallyDismissed {
                     sshRecoveryBanner
                 }
 
@@ -425,6 +426,11 @@ struct DeviceDetailView: View {
             let m = try await APIClient.shared.getDeviceMetrics(id: device.id)
             metrics = m
             if m.hasError {
+                // Treat a different error string as a new event and re-show
+                // the banner even if the user dismissed the previous one.
+                if sshErrorText != m.error {
+                    sshBannerManuallyDismissed = false
+                }
                 sshErrorText = m.error
                 showSSHBanner = true
             } else {
@@ -432,6 +438,7 @@ struct DeviceDetailView: View {
                 recoveryMessage = nil
                 diagnosis = nil
                 showSSHBanner = false
+                sshBannerManuallyDismissed = false
             }
         } catch {
             // Transport / API errors are not necessarily SSH failures; leave
@@ -456,7 +463,7 @@ struct DeviceDetailView: View {
                         ProgressView().controlSize(.small)
                     }
                     Button {
-                        showSSHBanner = false
+                        sshBannerManuallyDismissed = true
                     } label: {
                         Image(systemName: "xmark")
                     }
@@ -522,6 +529,9 @@ struct DeviceDetailView: View {
     }
 
     private func runRecoveryAction() async {
+        // User explicitly re-engaged the recovery flow; un-stick a prior
+        // dismiss so the banner reflects the new state.
+        sshBannerManuallyDismissed = false
         switch diagnosis?.category {
         case "host_key_mismatch":
             if diagnosis?.hostKeyFingerprint != nil {
@@ -532,11 +542,14 @@ struct DeviceDetailView: View {
         case "tailscale":
             openTailscaleApp()
         case "auth_failed":
+            // Re-diagnose first; runDiagnose clears recoveryMessage at the
+            // start of its run, so the help string must be set afterwards
+            // or it would be wiped before the user sees it.
+            await runDiagnose()
             recoveryMessage = "SSH 키가 서버의 authorized_keys에 등록되어 있는지, 사용자 계정이 올바른지 확인하세요."
-            await runDiagnose()
         case "key_file_missing":
-            recoveryMessage = "Hydra가 사용하는 SSH 개인키 경로를 환경 설정에서 확인하세요."
             await runDiagnose()
+            recoveryMessage = "Hydra가 사용하는 SSH 개인키 경로를 환경 설정에서 확인하세요."
         default:
             await runDiagnose()
         }
@@ -571,16 +584,20 @@ struct DeviceDetailView: View {
             let d = try await APIClient.shared.diagnoseSSH(id: device.id)
             diagnosis = d
             if d.isOK {
-                recoveryMessage = "SSH 연결이 정상입니다."
+                // Banner stays visible briefly so the user can see the
+                // success message; the next metrics poll will close it once
+                // m.hasError clears. Calling fetchMetrics here would clobber
+                // recoveryMessage on the same tick.
                 sshErrorText = nil
-                await fetchMetrics()
+                recoveryMessage = "SSH 연결이 정상입니다."
                 return
             }
             if d.isHostKeyMismatch, d.hostKeyFingerprint != nil {
                 showFingerprintAlert = true
             }
         } catch {
-            recoveryMessage = "진단 실패: \(error.localizedDescription)"
+            recoveryMessage = "진단을 시작할 수 없습니다. 잠시 후 다시 시도하세요."
+            print("ssh diagnose error: \(error.localizedDescription)")
         }
     }
 
@@ -595,7 +612,8 @@ struct DeviceDetailView: View {
             diagnosis = nil
             await fetchMetrics()
         } catch {
-            recoveryMessage = "키 저장 실패: \(error.localizedDescription)"
+            recoveryMessage = "키를 저장하지 못했습니다. 잠시 후 다시 시도하세요."
+            print("ssh accept host key error: \(error.localizedDescription)")
         }
     }
 
